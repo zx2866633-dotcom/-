@@ -65,37 +65,39 @@
     </div>
 
     <script>
-        // 🔑 유저님의 Supabase 접속 정보 (자동 세팅됨!)
+        // ✅ 찾으신 진짜 접속 정보가 완벽하게 세팅되었습니다!
         const SUPABASE_URL = 'https://tdgcuozhvuyggktdjrry.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_Z6LIsjnad1cndc4pxBUgvQ_0g6z8s_T';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZ2N1b3podnV5Z2drdGRqcnJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MzA2NTgsImV4cCI6MjA5NzIwNjY1OH0.TV08rACNlnetiWJFGYZOpFc89NSpe_52dS-Zwpuy8tU';
         const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const players = ['박형철', '와대', '손호민', '최석훈'];
         let currentUser = localStorage.getItem('worldcupUser') || '';
 
-        // 초기화 함수
         async function init() {
             if (currentUser) document.getElementById('current-user').value = currentUser;
             await loadData();
         }
 
-        // 유저 선택 저장
         function saveUser() {
             currentUser = document.getElementById('current-user').value;
             localStorage.setItem('worldcupUser', currentUser);
-            loadData(); // 사용자 변경 시 화면 새로고침
+            loadData();
         }
 
-        // 데이터 불러오기 (경기 & 베팅)
         async function loadData() {
-            const { data: matches } = await supabase.from('matches').select('*').order('created_at', { ascending: true });
-            const { data: bets } = await supabase.from('bets').select('*');
+            const { data: matches, error: mError } = await supabase.from('matches').select('*').order('created_at', { ascending: true });
+            const { data: bets, error: bError } = await supabase.from('bets').select('*');
             
+            if(mError || bError) {
+                console.error("데이터 로딩 에러:", mError || bError);
+                document.getElementById('matches-list').innerHTML = '<p class="text-center text-red-500">데이터를 불러오는 중 오류가 발생했습니다.</p>';
+                return;
+            }
+
             renderMatches(matches || [], bets || []);
             calculateLeaderboard(matches || [], bets || []);
         }
 
-        // 화면에 경기 목록 그리기
         function renderMatches(matches, bets) {
             const container = document.getElementById('matches-list');
             container.innerHTML = '';
@@ -106,21 +108,17 @@
             }
 
             matches.forEach(match => {
-                // 이 경기에 베팅한 사람 확인
                 const matchBets = bets.filter(b => b.match_id === match.id);
                 const myBet = matchBets.find(b => b.player_name === currentUser);
                 
-                // 베팅 현황 텍스트 생성
                 let betStatusText = players.map(p => {
                     const b = matchBets.find(x => x.player_name === p);
                     return b ? `<span class="text-blue-600 font-bold">${p}(O)</span>` : `<span class="text-gray-400">${p}(X)</span>`;
                 }).join(' / ');
 
-                // 카드 HTML 조립
                 let cardHTML = `
                 <div class="border-2 ${match.status === 'finished' ? 'border-gray-300 bg-gray-50' : 'border-blue-300 bg-white'} rounded-xl p-5 relative shadow-sm">
                     <span class="absolute -top-3 left-4 bg-gray-700 text-white px-2 py-1 rounded text-xs shadow">ID: ${match.id}</span>
-                    
                     <div class="text-center mb-4">
                         <span class="text-xl font-black text-gray-800">${match.team_a}</span>
                         <span class="text-gray-400 font-bold mx-2">VS</span>
@@ -129,7 +127,6 @@
                     </div>
                 `;
 
-                // 베팅 중일 때 (open)
                 if (match.status === 'open') {
                     cardHTML += `
                     <div class="flex gap-2 mb-3">
@@ -138,9 +135,7 @@
                     </div>
                     <div class="text-xs text-center mt-2 p-2 bg-gray-100 rounded">베팅 현황: ${betStatusText}</div>
                     `;
-                } 
-                // 결과 나왔을 때 (finished)
-                else if (match.status === 'finished') {
+                } else if (match.status === 'finished') {
                     const adjustedA = match.score_a + match.handicap;
                     const winnerResult = adjustedA > match.score_b ? 'A' : 'B';
                     const winnerText = winnerResult === 'A' ? `${match.team_a} 승리` : `${match.team_b} 승리`;
@@ -162,7 +157,6 @@
             });
         }
 
-        // 벌금 통계 계산
         function calculateLeaderboard(matches, bets) {
             const finishedMatches = matches.filter(m => m.status === 'finished');
             if(finishedMatches.length === 0) return;
@@ -175,9 +169,7 @@
                 
                 const matchBets = bets.filter(b => b.match_id === match.id);
                 matchBets.forEach(bet => {
-                    if(bet.pick !== winnerResult) {
-                        misses[bet.player_name]++;
-                    }
+                    if(bet.pick !== winnerResult) misses[bet.player_name]++;
                 });
             });
 
@@ -189,20 +181,16 @@
             ).join('');
         }
 
-        // 내 베팅 전송하기
         async function placeBet(matchId, pick) {
             if (!currentUser) return alert('맨 위에서 먼저 내 이름을 선택해주세요!');
             
-            // 기존 베팅 지우고 새로 쓰기 (변경 가능하게)
             await supabase.from('bets').delete().match({ match_id: matchId, player_name: currentUser });
             const { error } = await supabase.from('bets').insert({ match_id: matchId, player_name: currentUser, pick: pick });
             
             if (error) alert('오류 발생: ' + error.message);
-            else loadData(); // 화면 새로고침
+            else loadData();
         }
 
-        // ================= 방장용 함수 =================
-        
         async function createMatch() {
             const teamA = document.getElementById('new-teamA').value;
             const teamB = document.getElementById('new-teamB').value;
@@ -213,7 +201,7 @@
             const { error } = await supabase.from('matches').insert({ team_a: teamA, team_b: teamB, handicap: handi, status: 'open' });
             if (error) alert('추가 실패: ' + error.message);
             else {
-                alert('경기가 등록되었습니다! 친구들에게 베팅하라고 알려주세요.');
+                alert('경기가 등록되었습니다!');
                 loadData();
             }
         }
@@ -233,12 +221,11 @@
 
             if (error) alert('정산 실패: ' + error.message);
             else {
-                alert('정산이 완료되었습니다! 위쪽 통계에 오답자가 반영됩니다.');
+                alert('정산이 완료되었습니다!');
                 loadData();
             }
         }
 
-        // 앱 시작
         window.onload = init;
     </script>
 </body>
