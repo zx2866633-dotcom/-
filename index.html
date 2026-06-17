@@ -42,12 +42,12 @@
         <h2 class="text-xl font-extrabold text-red-600 mb-4">👑 방장 전용 관리 메뉴</h2>
         
         <div class="bg-blue-100 p-4 rounded border border-blue-300 mb-4 shadow-sm">
-            <h3 class="font-bold text-blue-800 mb-2">📡 API 자동 경기 불러오기</h3>
+            <h3 class="font-bold text-blue-800 mb-2">📡 API 자동 경기 불러오기 (월드컵 전용)</h3>
             
             <input type="password" id="api-football-key" class="w-full border rounded p-2 text-sm mb-2" placeholder="API-Football Key 입력 (한번 입력시 저장됨)">
             <div class="flex gap-2 mb-2">
                 <input type="date" id="api-date" class="border rounded p-2 text-sm w-1/2">
-                <button onclick="fetchApiMatches()" class="w-1/2 bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 text-sm">일정 조회</button>
+                <button onclick="fetchApiMatches()" class="w-1/2 bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 text-sm">월드컵 일정 조회</button>
             </div>
             
             <div id="api-match-selector" class="hidden flex-col gap-2 mt-4 pt-4 border-t border-blue-300">
@@ -99,11 +99,9 @@
         async function init() {
             if (currentUser) document.getElementById('current-user').value = currentUser;
             
-            // API-Football 저장된 키 불러오기
             const savedApiKey = localStorage.getItem('apiFootballKey');
             if (savedApiKey) document.getElementById('api-football-key').value = savedApiKey;
             
-            // 오늘 날짜로 API 날짜 기본 세팅
             const todayStr = new Date().toISOString().split('T')[0];
             document.getElementById('api-date').value = todayStr;
 
@@ -137,17 +135,18 @@
             }
         }
 
-        // ================= API-Football 기능 추가 부분 =================
+        // ================= 핵심 변경 사항 =================
         async function fetchApiMatches() {
             const apiKey = document.getElementById('api-football-key').value;
             if(!apiKey) return alert('API-Football 키를 입력해주세요!');
-            localStorage.setItem('apiFootballKey', apiKey); // 키 저장
+            localStorage.setItem('apiFootballKey', apiKey);
 
             const selectedDate = document.getElementById('api-date').value;
             if(!selectedDate) return alert('조회할 날짜를 선택해주세요!');
 
             try {
-                const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${selectedDate}`, {
+                // 변경점: URL 뒤에 &league=1 (월드컵) &season=2026 조건을 추가했습니다!
+                const response = await fetch(`https://v3.football.api-sports.io/fixtures?date=${selectedDate}&league=1&season=2026`, {
                     headers: {
                         'x-rapidapi-host': 'v3.football.api-sports.io',
                         'x-rapidapi-key': apiKey
@@ -160,27 +159,27 @@
                 }
 
                 const fixtures = data.response;
-                if(fixtures.length === 0) return alert('해당 날짜에 예정된 경기가 없습니다.');
+                if(fixtures.length === 0) return alert('선택하신 날짜에 열리는 월드컵 경기가 없습니다.');
 
                 const select = document.getElementById('api-match-list');
                 select.innerHTML = '';
                 
                 fixtures.forEach(f => {
                     const option = document.createElement('option');
-                    // 팀 이름을 JSON으로 묶어서 value에 저장
                     option.value = JSON.stringify({ teamA: f.teams.home.name, teamB: f.teams.away.name });
                     const time = new Date(f.fixture.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    // 옵션 표기: [시간] 팀A vs 팀B (리그이름)
-                    option.text = `[${time}] ${f.teams.home.name} vs ${f.teams.away.name} - ${f.league.name}`;
+                    // 옵션 표기: [시간] 팀A vs 팀B
+                    option.text = `[${time}] ${f.teams.home.name} vs ${f.teams.away.name}`;
                     select.appendChild(option);
                 });
 
                 document.getElementById('api-match-selector').classList.remove('hidden');
-                alert('경기를 성공적으로 불러왔습니다. 아래에서 선택 후 등록해주세요.');
+                alert('월드컵 경기를 성공적으로 불러왔습니다!');
             } catch (err) {
                 alert('API 연동 실패 (키를 확인하세요): ' + err.message);
             }
         }
+        // ===============================================================
 
         async function createApiMatch() {
             const selected = document.getElementById('api-match-list').value;
@@ -199,11 +198,10 @@
             if (error) alert('추가 실패: ' + error.message);
             else {
                 alert('자동으로 경기가 등록되었습니다!');
-                document.getElementById('api-match-selector').classList.add('hidden'); // 등록 후 창 숨기기
+                document.getElementById('api-match-selector').classList.add('hidden');
                 loadData();
             }
         }
-        // ===============================================================
 
         async function loadData() {
             document.getElementById('matches-list').innerHTML = '<p class="text-center text-gray-500 font-bold">데이터를 불러오는 중입니다...</p>';
@@ -221,11 +219,9 @@
             }
         }
 
-        // 개별 경기 삭제 기능
         async function deleteMatch(matchId) {
             if(!confirm("이 경기를 삭제하시겠습니까? (베팅 기록도 함께 사라집니다)")) return;
             
-            // 외래키(Foreign Key) 규칙 때문에 베팅 기록부터 지우고 경기를 지워야 함
             await client.from('bets').delete().match({ match_id: matchId });
             const { error } = await client.from('matches').delete().match({ id: matchId });
             
