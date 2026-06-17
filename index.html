@@ -65,10 +65,11 @@
     </div>
 
     <script>
-        // ✅ 찾으신 진짜 접속 정보가 완벽하게 세팅되었습니다!
         const SUPABASE_URL = 'https://tdgcuozhvuyggktdjrry.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZ2N1b3podnV5Z2drdGRqcnJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MzA2NTgsImV4cCI6MjA5NzIwNjY1OH0.TV08rACNlnetiWJFGYZOpFc89NSpe_52dS-Zwpuy8tU';
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        // ✅ 에러 해결: 변수 이름 충돌을 피하기 위해 'client'로 바꿨어!
+        const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const players = ['박형철', '와대', '손호민', '최석훈'];
         let currentUser = localStorage.getItem('worldcupUser') || '';
@@ -85,8 +86,9 @@
         }
 
         async function loadData() {
-            const { data: matches, error: mError } = await supabase.from('matches').select('*').order('created_at', { ascending: true });
-            const { data: bets, error: bError } = await supabase.from('bets').select('*');
+            // ✅ 데이터베이스 요청에 client.from 을 사용하도록 모두 수정함
+            const { data: matches, error: mError } = await client.from('matches').select('*').order('created_at', { ascending: true });
+            const { data: bets, error: bError } = await client.from('bets').select('*');
             
             if(mError || bError) {
                 console.error("데이터 로딩 에러:", mError || bError);
@@ -103,7 +105,7 @@
             container.innerHTML = '';
 
             if (matches.length === 0) {
-                container.innerHTML = '<p class="text-center text-gray-500">등록된 경기가 없습니다. 방장이 경기를 추가해주세요.</p>';
+                container.innerHTML = '<p class="text-center text-gray-500">등록된 경기가 없습니다. 방장이 [경기 열기]를 눌러주세요!</p>';
                 return;
             }
 
@@ -184,8 +186,8 @@
         async function placeBet(matchId, pick) {
             if (!currentUser) return alert('맨 위에서 먼저 내 이름을 선택해주세요!');
             
-            await supabase.from('bets').delete().match({ match_id: matchId, player_name: currentUser });
-            const { error } = await supabase.from('bets').insert({ match_id: matchId, player_name: currentUser, pick: pick });
+            await client.from('bets').delete().match({ match_id: matchId, player_name: currentUser });
+            const { error } = await client.from('bets').insert({ match_id: matchId, player_name: currentUser, pick: pick });
             
             if (error) alert('오류 발생: ' + error.message);
             else loadData();
@@ -198,7 +200,7 @@
 
             if(!teamA || !teamB) return alert('국가 이름을 입력하세요!');
 
-            const { error } = await supabase.from('matches').insert({ team_a: teamA, team_b: teamB, handicap: handi, status: 'open' });
+            const { error } = await client.from('matches').insert({ team_a: teamA, team_b: teamB, handicap: handi, status: 'open' });
             if (error) alert('추가 실패: ' + error.message);
             else {
                 alert('경기가 등록되었습니다!');
@@ -213,7 +215,7 @@
 
             if(isNaN(matchId) || isNaN(scoreA) || isNaN(scoreB)) return alert('모든 값을 정확히 입력하세요!');
 
-            const { error } = await supabase.from('matches').update({
+            const { error } = await client.from('matches').update({
                 score_a: scoreA,
                 score_b: scoreB,
                 status: 'finished'
