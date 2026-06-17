@@ -38,7 +38,11 @@
         </div>
     </div>
 
-    <div class="max-w-3xl mx-auto bg-red-50 rounded-xl shadow-lg overflow-hidden p-6 border-2 border-red-200">
+    <div class="max-w-3xl mx-auto text-center mb-8">
+        <button onclick="unlockAdmin()" class="bg-gray-700 text-white px-6 py-2 rounded-full font-bold hover:bg-black transition">👑 관리자 모드 접속</button>
+    </div>
+
+    <div id="admin-menu" class="max-w-3xl mx-auto bg-red-50 rounded-xl shadow-lg overflow-hidden p-6 border-2 border-red-200 hidden">
         <h2 class="text-xl font-extrabold text-red-600 mb-4">👑 방장 전용 관리 메뉴</h2>
         
         <div class="bg-white p-4 rounded border mb-4">
@@ -53,7 +57,6 @@
                 <input type="datetime-local" id="new-date" class="border rounded p-2 text-sm text-gray-600 flex-grow" title="과거 경기일 경우 날짜를 지정하세요">
                 <button onclick="createMatch()" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 text-sm whitespace-nowrap">경기 열기</button>
             </div>
-            <p class="text-xs text-gray-500 mt-2">* 과거 기록 추가 시 예전 날짜를 지정하세요. (비워두면 현재 시간으로 등록)</p>
         </div>
 
         <div class="bg-white p-4 rounded border mb-6">
@@ -69,7 +72,6 @@
 
         <div class="bg-red-100 p-4 rounded border border-red-300">
             <h3 class="font-bold text-red-700 mb-2">⚠️ 위험 구역 (전체 기록 초기화)</h3>
-            <p class="text-xs text-red-600 mb-3">모든 경기와 네 사람의 베팅 기록을 완전히 삭제하고 처음부터 다시 시작합니다.</p>
             <button onclick="resetAllMatches()" class="w-full bg-red-600 text-white px-4 py-2 rounded font-bold hover:bg-red-700 transition text-sm">모든 기록 삭제 (새로 시작)</button>
         </div>
     </div>
@@ -79,8 +81,22 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZ2N1b3podnV5Z2drdGRqcnJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MzA2NTgsImV4cCI6MjA5NzIwNjY1OH0.TV08rACNlnetiWJFGYZOpFc89NSpe_52dS-Zwpuy8tU';
         const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+        // ✅ 방장 비밀번호 설정 (여기 숫자를 바꾸면 비밀번호가 바뀜!)
+        const ADMIN_PASSWORD = "1234";
+
         const players = ['박형철', '와대', '손호민', '최석훈'];
         let currentUser = localStorage.getItem('worldcupUser') || '';
+
+        // 관리자 모드 접속
+        function unlockAdmin() {
+            const input = prompt("방장 비밀번호를 입력하세요:");
+            if (input === ADMIN_PASSWORD) {
+                document.getElementById('admin-menu').classList.remove('hidden');
+                alert("관리자 모드 활성화!");
+            } else {
+                alert("비밀번호가 틀렸습니다.");
+            }
+        }
 
         async function init() {
             if (currentUser) document.getElementById('current-user').value = currentUser;
@@ -188,16 +204,22 @@
                     const h = Number(match.handicap);
                     
                     const adjustedA = sA + h;
-                    const winnerResult = adjustedA > sB ? 'A' : 'B';
-                    const winnerText = winnerResult === 'A' ? `${match.team_a} 승리` : `${match.team_b} 승리`;
+                    let winnerResult = '';
+                    let winnerText = '';
                     
-                    const losers = matchBets.filter(b => b.pick !== winnerResult).map(b => b.player_name);
+                    if (adjustedA > sB) { winnerResult = 'A'; winnerText = `${match.team_a} 승리`; }
+                    else if (adjustedA < sB) { winnerResult = 'B'; winnerText = `${match.team_b} 승리`; }
+                    else { winnerResult = 'D'; winnerText = '무승부'; }
+                    
+                    let losers = [];
+                    if (winnerResult !== 'D') losers = matchBets.filter(b => b.pick !== winnerResult).map(b => b.player_name);
+                    let penaltyText = winnerResult === 'D' ? '무승부로 전원 패스! (벌금 없음)' : (losers.length > 0 ? losers.join(', ') : '틀린 사람 없음!');
                     
                     cardHTML += `
                     <div class="mt-3 cursor-pointer flex justify-between items-center" onclick="toggleMatch('match-content-${match.id}', this.querySelector('.toggle-btn'))">
                         <div class="text-left w-3/4 truncate">
                             <span class="font-bold text-gray-700">${match.team_a} vs ${match.team_b}</span>
-                            <span class="text-xs bg-gray-300 text-gray-800 px-2 py-1 rounded ml-2 font-bold">[${winnerText}]</span>
+                            <span class="text-xs ${winnerResult === 'D' ? 'bg-yellow-300' : 'bg-gray-300'} text-gray-800 px-2 py-1 rounded ml-2 font-bold">[${winnerText}]</span>
                         </div>
                         <span class="toggle-btn text-gray-500 text-xs border border-gray-300 bg-white px-2 py-1 rounded hover:bg-gray-200 font-bold">펼치기 ▼</span>
                     </div>
@@ -211,8 +233,8 @@
                         </div>
                         <div class="bg-gray-800 text-white p-3 rounded text-sm mt-2 text-center">
                             <p class="mb-1 text-gray-300">실제 스코어 <span class="font-bold text-white">${sA} : ${sB}</span></p>
-                            <p class="font-bold text-yellow-400 mb-2">핸디캡 적용 결과: [${winnerText}]</p>
-                            <p class="text-red-400">❌ 오답(벌금): ${losers.length > 0 ? losers.join(', ') : '틀린 사람 없음!'}</p>
+                            <p class="font-bold ${winnerResult === 'D' ? 'text-green-400' : 'text-yellow-400'} mb-2">핸디캡 적용 결과: [${winnerText}]</p>
+                            <p class="text-red-400">❌ 오답(벌금): ${penaltyText}</p>
                         </div>
                         <div class="text-xs text-center mt-2">나의 픽: ${myBet ? (myBet.pick === 'A' ? match.team_a : match.team_b) : '베팅 안함'}</div>
                     </div>
@@ -226,7 +248,6 @@
 
         function calculateLeaderboard(matches, bets) {
             const finishedMatches = matches.filter(m => m.status === 'finished');
-            
             if(finishedMatches.length === 0) {
                 document.getElementById('leaderboard').innerHTML = '<li class="text-gray-400 text-center">결과가 정산된 경기가 없습니다.</li>';
                 return;
@@ -239,12 +260,18 @@
                 const sB = Number(match.score_b);
                 const h = Number(match.handicap);
                 const adjustedA = sA + h;
-                const winnerResult = adjustedA > sB ? 'A' : 'B';
                 
-                players.forEach(p => {
-                    const bet = bets.find(b => b.match_id === match.id && b.player_name === p);
-                    if (bet && bet.pick !== winnerResult) misses[p]++;
-                });
+                let winnerResult = '';
+                if (adjustedA > sB) winnerResult = 'A';
+                else if (adjustedA < sB) winnerResult = 'B';
+                else winnerResult = 'D';
+
+                if (winnerResult !== 'D') {
+                    players.forEach(p => {
+                        const bet = bets.find(b => b.match_id === match.id && b.player_name === p);
+                        if (bet && bet.pick !== winnerResult) misses[p]++;
+                    });
+                }
             });
 
             const sorted = Object.entries(misses).sort((a, b) => b[1] - a[1]);
@@ -274,11 +301,7 @@
             if(!teamA || !teamB) return alert('국가 이름을 입력하세요!');
 
             let insertData = { team_a: teamA, team_b: teamB, handicap: handi, status: 'open' };
-            
-            // 날짜를 입력했다면 그 시간으로 저장 (없으면 현재 시간)
-            if (pastDate) {
-                insertData.created_at = new Date(pastDate).toISOString();
-            }
+            if (pastDate) insertData.created_at = new Date(pastDate).toISOString();
 
             const { error } = await client.from('matches').insert(insertData);
             if (error) alert('추가 실패: ' + error.message);
