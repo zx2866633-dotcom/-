@@ -39,7 +39,7 @@
     </div>
 
     <div class="max-w-3xl mx-auto text-center mb-8">
-        <button onclick="unlockAdmin()" class="bg-gray-700 text-white px-6 py-2 rounded-full font-bold hover:bg-black transition">👑 관리자 모드 접속</button>
+        <button onclick="handleAdminAction('show_menu')" class="bg-gray-700 text-white px-6 py-2 rounded-full font-bold hover:bg-black transition">👑 관리자 모드 접속</button>
     </div>
 
     <div id="admin-menu" class="max-w-3xl mx-auto bg-red-50 rounded-xl shadow-lg overflow-hidden p-6 border-2 border-red-200 hidden">
@@ -55,31 +55,31 @@
             </div>
             <div class="flex gap-2 items-center">
                 <input type="datetime-local" id="new-date" class="border rounded p-2 text-sm text-gray-600 flex-grow">
-                <button onclick="createMatch()" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 text-sm whitespace-nowrap">경기 열기</button>
+                <button onclick="handleAdminAction('create')" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 text-sm whitespace-nowrap">경기 열기</button>
             </div>
         </div>
 
         <div class="bg-white p-4 rounded border mb-4">
-            <h3 class="font-bold text-gray-700 mb-2">2. 베팅 마감 (수정 불가)</h3>
+            <h3 class="font-bold text-gray-700 mb-2">2. 베팅 마감</h3>
             <div class="flex gap-2 items-center">
                 <input type="number" id="close-match-id" class="w-24 border rounded p-2 text-sm" placeholder="경기ID">
-                <button onclick="closeBetting()" class="bg-yellow-600 text-white px-4 py-2 rounded font-bold hover:bg-yellow-700 text-sm">이 경기 마감하기</button>
+                <button onclick="handleAdminAction('close')" class="bg-yellow-600 text-white px-4 py-2 rounded font-bold hover:bg-yellow-700 text-sm">마감하기</button>
             </div>
         </div>
 
         <div class="bg-white p-4 rounded border mb-6">
-            <h3 class="font-bold text-gray-700 mb-2">3. 경기 결과 입력 (정산)</h3>
-            <div class="flex gap-2 items-center mb-2">
-                <input type="number" id="finish-match-id" class="w-24 border rounded p-2" placeholder="ID">
-                <input type="number" id="finish-scoreA" class="w-16 border rounded p-2" placeholder="A점수">
+            <h3 class="font-bold text-gray-700 mb-2">3. 경기 결과 입력</h3>
+            <div class="flex flex-wrap gap-2 items-center mb-2">
+                <input type="number" id="finish-match-id" class="w-24 border rounded p-2 text-sm" placeholder="ID">
+                <input type="number" id="finish-scoreA" class="w-16 border rounded p-2 text-sm" placeholder="A점수">
                 <span class="font-bold">:</span>
-                <input type="number" id="finish-scoreB" class="w-16 border rounded p-2" placeholder="B점수">
-                <button onclick="finishMatch()" class="bg-gray-800 text-white px-4 py-2 rounded font-bold hover:bg-black text-sm">확정</button>
+                <input type="number" id="finish-scoreB" class="w-16 border rounded p-2 text-sm" placeholder="B점수">
+                <button onclick="handleAdminAction('finish')" class="bg-gray-800 text-white px-4 py-2 rounded font-bold hover:bg-black text-sm">확정</button>
             </div>
         </div>
 
         <div class="bg-red-100 p-4 rounded border border-red-300">
-            <button onclick="resetAllMatches()" class="w-full bg-red-600 text-white px-4 py-2 rounded font-bold hover:bg-red-700 transition text-sm">모든 데이터 초기화</button>
+            <button onclick="handleAdminAction('reset')" class="w-full bg-red-600 text-white px-4 py-2 rounded font-bold hover:bg-red-700 transition text-sm">모든 데이터 초기화</button>
         </div>
     </div>
 
@@ -87,14 +87,30 @@
         const SUPABASE_URL = 'https://tdgcuozhvuyggktdjrry.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkZ2N1b3podnV5Z2drdGRqcnJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MzA2NTgsImV4cCI6MjA5NzIwNjY1OH0.TV08rACNlnetiWJFGYZOpFc89NSpe_52dS-Zwpuy8tU';
         const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const ADMIN_PASSWORD = "1234";
+        const ADMIN_PASSWORD = "1234"; // 👈 여기 비밀번호를 원하는 대로 바꿔!
         const players = ['박형철', '와대', '손호민', '최석훈'];
         let currentUser = localStorage.getItem('worldcupUser') || '';
 
-        function unlockAdmin() {
+        // ✅ 비밀번호 체크 시스템
+        function checkAuth() {
+            if (sessionStorage.getItem('isAdmin') === 'true') return true;
             const input = prompt("방장 비밀번호:");
-            if (input === ADMIN_PASSWORD) document.getElementById('admin-menu').classList.remove('hidden');
-            else alert("틀렸습니다.");
+            if (input === ADMIN_PASSWORD) {
+                sessionStorage.setItem('isAdmin', 'true');
+                return true;
+            }
+            alert("비밀번호가 틀렸습니다.");
+            return false;
+        }
+
+        // 모든 관리자 기능을 이 함수를 통해 실행
+        function handleAdminAction(action, ...args) {
+            if(!checkAuth()) return;
+            if(action === 'show_menu') document.getElementById('admin-menu').classList.remove('hidden');
+            if(action === 'create') createMatch();
+            if(action === 'close') closeBetting();
+            if(action === 'finish') finishMatch();
+            if(action === 'reset') resetAllMatches();
         }
 
         async function init() {
@@ -108,48 +124,30 @@
             loadData();
         }
 
-        function formatDate(dateString) {
-            const d = new Date(dateString);
-            return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        async function editMatch(id, a, b, h) {
+            if(!checkAuth()) return; // 수정도 비번 필수
+            const newA = prompt("팀A 수정:", a); if(newA === null) return;
+            const newB = prompt("팀B 수정:", b); if(newB === null) return;
+            const newH = prompt("핸디캡 수정:", h); if(newH === null) return;
+            await client.from('matches').update({ team_a: newA, team_b: newB, handicap: parseFloat(newH) }).match({ id: id });
+            loadData();
         }
 
-        function toggleMatch(id, btn) {
-            const content = document.getElementById(id);
-            if(content.classList.contains('hidden')) { content.classList.remove('hidden'); btn.innerText = '접기 ▲'; }
-            else { content.classList.add('hidden'); btn.innerText = '펼치기 ▼'; }
+        async function deleteMatch(id) {
+            if(!checkAuth()) return; // 삭제도 비번 필수
+            if(!confirm("삭제하시겠습니까?")) return;
+            await client.from('bets').delete().match({ match_id: id });
+            await client.from('matches').delete().match({ id: id });
+            loadData();
         }
 
         async function loadData() {
             try {
-                const { data: matches, error: mError } = await client.from('matches').select('*').order('created_at', { ascending: true });
-                const { data: bets, error: bError } = await client.from('bets').select('*');
-                if(mError || bError) throw new Error("데이터 불러오기 실패");
+                const { data: matches } = await client.from('matches').select('*').order('created_at', { ascending: true });
+                const { data: bets } = await client.from('bets').select('*');
                 renderMatches(matches || [], bets || []);
                 calculateLeaderboard(matches || [], bets || []);
-            } catch (err) { document.getElementById('matches-list').innerHTML = `<p class="text-center text-red-600">${err.message}</p>`; }
-        }
-
-        async function editMatch(matchId, oldA, oldB, oldH) {
-            const newA = prompt("팀A 수정:", oldA); if(newA === null) return;
-            const newB = prompt("팀B 수정:", oldB); if(newB === null) return;
-            const newH = prompt("핸디캡 수정:", oldH); if(newH === null) return;
-            await client.from('matches').update({ team_a: newA, team_b: newB, handicap: parseFloat(newH) }).match({ id: matchId });
-            loadData();
-        }
-
-        async function deleteMatch(matchId) {
-            if(!confirm("삭제하시겠습니까?")) return;
-            await client.from('bets').delete().match({ match_id: matchId });
-            await client.from('matches').delete().match({ id: matchId });
-            loadData();
-        }
-
-        async function closeBetting() {
-            const id = document.getElementById('close-match-id').value;
-            if(!id) return alert("경기 ID를 입력하세요.");
-            await client.from('matches').update({ status: 'closed' }).match({ id: id });
-            alert("베팅이 마감되었습니다.");
-            loadData();
+            } catch (err) { alert(err.message); }
         }
 
         function renderMatches(matches, bets) {
@@ -158,66 +156,53 @@
             matches.forEach(match => {
                 const matchBets = bets.filter(b => b.match_id === match.id);
                 const myBet = matchBets.find(b => b.player_name === currentUser);
-                const matchDate = formatDate(match.created_at);
                 
-                // ✅ 수정: A/B 대신 팀 이름으로 표시
                 let betStatusText = players.map(p => {
                     const b = matchBets.find(x => x.player_name === p);
-                    const teamName = b ? (b.pick === 'A' ? match.team_a : match.team_b) : '-';
-                    return b ? `<span class="font-bold ${b.pick === 'A' ? 'text-blue-600' : 'text-red-600'}">${p}(${teamName})</span>` : `<span class="text-gray-400">${p}(-)</span>`;
+                    const tName = b ? (b.pick === 'A' ? match.team_a : match.team_b) : '-';
+                    return b ? `<span class="font-bold ${b.pick === 'A'?'text-blue-600':'text-red-600'}">${p}(${tName})</span>` : `<span class="text-gray-400">${p}(-)</span>`;
                 }).join(' / ');
 
                 let cardHTML = `
-                <div class="border-2 ${match.status === 'finished' ? 'border-gray-300 bg-gray-100' : 'border-blue-300 bg-white'} rounded-xl p-5 relative shadow-sm mb-4">
+                <div class="border-2 ${match.status === 'finished'?'border-gray-300 bg-gray-100':'border-blue-300 bg-white'} rounded-xl p-5 relative shadow-sm mb-4">
                     <span class="absolute -top-3 left-4 bg-gray-700 text-white px-2 py-1 rounded text-xs shadow">ID: ${match.id}</span>
                     <div class="absolute top-2 right-4 flex gap-1 items-center">
                         <button onclick="editMatch(${match.id}, '${match.team_a}', '${match.team_b}', ${match.handicap})" class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">✏️</button>
                         <button onclick="deleteMatch(${match.id})" class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded">🗑️</button>
                     </div>
-                `;
-
-                if (match.status === 'open') {
-                    cardHTML += `
                     <div class="text-center mb-4 mt-2">
                         <span class="text-xl font-black text-gray-800">${match.team_a}</span> vs <span class="text-xl font-black text-gray-800">${match.team_b}</span>
                         <p class="text-xs text-blue-600 font-bold mt-1">핸디캡(A): ${match.handicap}</p>
                     </div>
+                `;
+
+                if (match.status === 'open') {
+                    cardHTML += `
                     <div class="flex gap-2 mb-3">
-                        <button onclick="placeBet(${match.id}, 'A')" class="${myBet?.pick === 'A' ? 'bg-blue-600 text-white' : 'bg-gray-200'} w-1/2 py-2 rounded font-bold">${match.team_a} 승</button>
-                        <button onclick="placeBet(${match.id}, 'B')" class="${myBet?.pick === 'B' ? 'bg-red-600 text-white' : 'bg-gray-200'} w-1/2 py-2 rounded font-bold">${match.team_b} 승</button>
+                        <button onclick="placeBet(${match.id}, 'A')" class="${myBet?.pick === 'A'?'bg-blue-600 text-white':'bg-gray-200'} w-1/2 py-2 rounded font-bold">${match.team_a} 승</button>
+                        <button onclick="placeBet(${match.id}, 'B')" class="${myBet?.pick === 'B'?'bg-red-600 text-white':'bg-gray-200'} w-1/2 py-2 rounded font-bold">${match.team_b} 승</button>
                     </div>
-                    <div class="text-xs text-center mt-2 p-2 bg-gray-100 rounded">베팅 현황: ${betStatusText}</div>
-                    `;
+                    <div class="text-xs text-center mt-2 p-2 bg-gray-100 rounded">베팅 현황: ${betStatusText}</div>`;
                 } else if (match.status === 'closed') {
-                    cardHTML += `
-                    <div class="text-center my-4 p-3 bg-yellow-100 rounded-lg font-bold text-yellow-800">🔒 베팅이 마감되었습니다.</div>
-                    <div class="text-xs text-center mt-2 p-2 bg-gray-100 rounded">베팅 현황: ${betStatusText}</div>
-                    `;
+                    cardHTML += `<div class="text-center my-4 p-3 bg-yellow-100 rounded-lg font-bold text-yellow-800">🔒 베팅 마감</div>`;
                 } else {
-                    const sA = Number(match.score_a); const sB = Number(match.score_b); const h = Number(match.handicap);
-                    const adjustedA = sA + h;
-                    let result = (adjustedA > sB) ? 'A' : (adjustedA < sB) ? 'B' : 'D';
-                    let text = (result === 'A') ? match.team_a+' 승' : (result === 'B') ? match.team_b+' 승' : '무승부';
-                    cardHTML += `
-                    <div class="mt-3 cursor-pointer flex justify-between items-center" onclick="toggleMatch('m-${match.id}', this.querySelector('.toggle-btn'))">
-                        <span class="font-bold">${match.team_a} vs ${match.team_b}</span>
-                        <span class="toggle-btn text-xs bg-gray-200 px-2 py-1 rounded">펼치기 ▼</span>
-                    </div>
-                    <div id="m-${match.id}" class="hidden mt-2 p-2 bg-gray-800 text-white rounded text-xs text-center">
-                        스코어: ${sA}:${sB} (${text})
-                    </div>`;
+                    const sA=Number(match.score_a), sB=Number(match.score_b), h=Number(match.handicap);
+                    const adjA = sA + h;
+                    let result = (adjA > sB) ? 'A' : (adjA < sB) ? 'B' : 'D';
+                    cardHTML += `<div class="mt-2 text-center bg-gray-800 text-white rounded text-xs p-2">스코어: ${sA}:${sB} (${result==='A'?match.team_a+'승':result==='B'?match.team_b+'승':'무승부'})</div>`;
                 }
                 cardHTML += `</div>`;
                 container.insertAdjacentHTML('beforeend', cardHTML);
             });
         }
 
+        // [이하 함수들 동일]
         function calculateLeaderboard(matches, bets) {
             const finishedMatches = matches.filter(m => m.status === 'finished');
             let misses = { '박형철': 0, '와대': 0, '손호민': 0, '최석훈': 0 };
             finishedMatches.forEach(match => {
-                const adjustedA = Number(match.score_a) + Number(match.handicap);
-                let winner = (adjustedA > Number(match.score_b)) ? 'A' : (adjustedA < Number(match.score_b)) ? 'B' : 'D';
+                const adjA = Number(match.score_a) + Number(match.handicap);
+                let winner = (adjA > Number(match.score_b)) ? 'A' : (adjA < Number(match.score_b)) ? 'B' : 'D';
                 if(winner !== 'D') {
                     players.forEach(p => {
                         const bet = bets.find(b => b.match_id === match.id && b.player_name === p);
@@ -231,28 +216,29 @@
         }
 
         async function placeBet(matchId, pick) {
-            if(!currentUser) return alert('이름을 먼저 선택하세요.');
+            if (!currentUser) return alert('이름 선택 필수!');
             const { data: m } = await client.from('matches').select('status').eq('id', matchId).single();
-            if(m.status !== 'open') return alert('베팅이 마감된 경기입니다.');
+            if(m.status !== 'open') return alert('베팅 마감됨.');
             await client.from('bets').delete().match({ match_id: matchId, player_name: currentUser });
             await client.from('bets').insert({ match_id: matchId, player_name: currentUser, pick: pick });
             loadData();
         }
 
         async function createMatch() {
-            const tA = document.getElementById('new-teamA').value;
-            const tB = document.getElementById('new-teamB').value;
-            const h = parseFloat(document.getElementById('new-handi').value);
-            const d = document.getElementById('new-date').value;
+            const tA = document.getElementById('new-teamA').value, tB = document.getElementById('new-teamB').value, h = parseFloat(document.getElementById('new-handi').value), d = document.getElementById('new-date').value;
             await client.from('matches').insert({ team_a: tA, team_b: tB, handicap: h, status: 'open', created_at: d ? new Date(d) : new Date() });
             loadData();
         }
 
         async function finishMatch() {
-            const id = document.getElementById('finish-match-id').value;
-            const sA = document.getElementById('finish-scoreA').value;
-            const sB = document.getElementById('finish-scoreB').value;
+            const id = document.getElementById('finish-match-id').value, sA = document.getElementById('finish-scoreA').value, sB = document.getElementById('finish-scoreB').value;
             await client.from('matches').update({ score_a: sA, score_b: sB, status: 'finished' }).match({ id: id });
+            loadData();
+        }
+
+        async function closeBetting() {
+            const id = document.getElementById('close-match-id').value;
+            await client.from('matches').update({ status: 'closed' }).match({ id: id });
             loadData();
         }
 
