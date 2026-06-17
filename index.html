@@ -182,4 +182,17 @@
         }
 
         function createMatch() {
-            const tA = document.getElementById('new-teamA').value, tB = document.getElementById('new-teamB').value, h = parseFloat(document.getElementById('new-handi').value), d =
+            const tA = document.getElementById('new-teamA').value, tB = document.getElementById('new-teamB').value, h = parseFloat(document.getElementById('new-handi').value), d = document.getElementById('new-date').value;
+            client.from('matches').insert({ team_a: tA, team_b: tB, handicap: h, status: 'open', created_at: d ? new Date(d) : new Date() }).then(loadData);
+        }
+
+        function resetAllMatches() {
+            if(confirm("초기화?")) {
+                client.from('bets').delete().neq('id', 0).then(() => client.from('matches').delete().neq('id', 0)).then(loadData);
+            }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
