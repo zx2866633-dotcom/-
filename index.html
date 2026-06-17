@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>월드컵 4인 실시간 내기방</title>
+    <title>월드컵 아카파 실시간 내기방</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -127,7 +127,6 @@
                 const { data: matches } = await client.from('matches').select('*').order('created_at', { ascending: true });
                 const { data: bets } = await client.from('bets').select('*');
                 
-                // 정렬 로직: 진행중(open, closed) -> 확정(finished) -> 수금완료(paid)
                 const statusOrder = { 'open': 1, 'closed': 2, 'finished': 3, 'paid': 4 };
                 matches.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
 
@@ -163,7 +162,6 @@
             loadData();
         }
 
-        // 베팅 내역 수정 기능 (방장 전용)
         async function editBetsAdmin(matchId) {
             if(!checkAuth()) return;
             const input = prompt("박형철, 와대, 손호민, 최석훈 님의 베팅을 쉼표(,)로 구분해서 입력하세요.\n(A: 팀A, B: 팀B, X: 베팅안함)\n\n예시: A, B, A, X");
@@ -204,7 +202,6 @@
                     return b ? `<span class="font-bold ${b.pick === 'A'?'text-blue-600':'text-red-600'}">${p}(${tName})</span>` : `<span class="text-gray-400">${p}(-)</span>`;
                 }).join(' / ');
 
-                // 수금 완료된 경기 (미니멀 표시)
                 if (match.status === 'paid') {
                     const sA=Number(match.score_a), sB=Number(match.score_b), h=Number(match.handicap);
                     const adjA = sA + h;
@@ -213,18 +210,20 @@
                     let penaltyText = winner === 'D' ? '무승부' : (losers.length > 0 ? `💸 벌금: ${losers.join(', ')}` : '🎉 전원 정답');
 
                     container.insertAdjacentHTML('beforeend', `
-                        <div class="bg-gray-200 border border-gray-300 rounded p-2 flex justify-between items-center text-xs shadow-inner">
+                        <div class="bg-gray-200 border border-gray-300 rounded p-2 flex justify-between items-center text-xs shadow-inner mb-2">
                             <div>
                                 <span class="font-bold text-gray-500">[수금완료]</span> ${match.team_a} ${sA}:${sB} ${match.team_b} 
                                 <span class="ml-2 text-red-600 font-bold">${penaltyText}</span>
                             </div>
-                            <button onclick="deleteMatch(${match.id})" class="text-[10px] bg-red-100 text-red-600 px-2 py-1 rounded">🗑️</button>
+                            <div class="flex gap-1">
+                                <button onclick="editBetsAdmin(${match.id})" class="text-[10px] bg-purple-200 text-purple-800 px-2 py-1 rounded">✏️픽수정</button>
+                                <button onclick="deleteMatch(${match.id})" class="text-[10px] bg-red-100 text-red-600 px-2 py-1 rounded">🗑️</button>
+                            </div>
                         </div>
                     `);
-                    return; // 렌더링 종료 (아래 큰 카드 로직 안탐)
+                    return;
                 }
 
-                // 확정된 경기 (결과 및 벌금자 표시)
                 if (match.status === 'finished') {
                     const sA=Number(match.score_a), sB=Number(match.score_b), h=Number(match.handicap);
                     const adjA = sA + h;
@@ -261,12 +260,11 @@
                     return;
                 }
 
-                // 진행 중인 경기 (베팅 가능)
                 let cardHTML = `
                 <div class="border-2 border-blue-300 bg-white rounded-xl p-5 relative shadow-sm mb-4">
                     <span class="absolute -top-3 left-4 bg-gray-700 text-white px-2 py-1 rounded text-xs shadow">ID: ${match.id}</span>
                     <div class="absolute top-2 right-4 flex gap-1 items-center">
-                        <button onclick="editMatch(${match.id}, '${match.team_a}', '${match.team_b}', ${match.handicap})" class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">✏️</button>
+                        <button onclick="editMatch(${match.id}, '${match.team_a}', '${match.team_b}', ${match.handicap})" class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">✏️경기수정</button>
                         <button onclick="deleteMatch(${match.id})" class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded">🗑️</button>
                     </div>
                     <div class="text-center mb-4 mt-2">
@@ -284,7 +282,6 @@
         }
 
         function calculateLeaderboard(matches, bets) {
-            // 정산완료(finished)이거나 수금완료(paid)된 것 모두 누적금액에 포함시킴
             const settledMatches = matches.filter(m => m.status === 'finished' || m.status === 'paid');
             let misses = { '박형철': 0, '와대': 0, '손호민': 0, '최석훈': 0 };
             
@@ -294,7 +291,7 @@
                 if(winner !== 'D') {
                     players.forEach(p => {
                         const bet = bets.find(b => b.match_id === match.id && b.player_name === p);
-                        if (!bet || bet.pick !== winner) misses[p]++; // 베팅 안 한 사람도 벌금 처리
+                        if (!bet || bet.pick !== winner) misses[p]++; 
                     });
                 }
             });
@@ -303,9 +300,25 @@
                 `<li class="flex justify-between bg-gray-700 p-2 rounded"><span>👤 ${n}</span><span class="${c>0?'text-red-400':'text-green-400'} font-bold">${(c * 1500).toLocaleString()}원 (${c}회)</span></li>`).join('');
         }
 
+        // ✅ 낙장불입 (베팅 수정 불가) 기능 추가
         async function placeBet(matchId, pick) {
             if (!currentUser) return alert('맨 위에서 이름을 먼저 선택해주세요!');
-            await client.from('bets').delete().match({ match_id: matchId, player_name: currentUser });
+            
+            // 1. 경기 상태 체크
+            const { data: m } = await client.from('matches').select('status').eq('id', matchId).single();
+            if(m.status !== 'open') return alert('베팅이 마감된 경기입니다!');
+            
+            // 2. 이미 베팅했는지 체크 (낙장불입 로직)
+            const { data: existingBet } = await client.from('bets')
+                .select('*')
+                .eq('match_id', matchId)
+                .eq('player_name', currentUser);
+                
+            if (existingBet && existingBet.length > 0) {
+                return alert('⚠️ 낙장불입! 한 번 선택한 베팅은 변경할 수 없습니다.\n잘못 누른 경우 방장에게 수정을 요청하세요.');
+            }
+
+            // 3. 베팅 등록
             await client.from('bets').insert({ match_id: matchId, player_name: currentUser, pick: pick });
             loadData();
         }
