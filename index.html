@@ -42,7 +42,6 @@
         <button onclick="unlockAdmin()" class="bg-gray-700 text-white px-6 py-2 rounded-full font-bold hover:bg-black transition">👑 관리자 모드 접속</button>
     </div>
 
-    <!-- 방장 전용 관리 메뉴 -->
     <div id="admin-menu" class="max-w-3xl mx-auto bg-red-50 rounded-xl shadow-lg overflow-hidden p-6 border-2 border-red-200 hidden">
         <h2 class="text-xl font-extrabold text-red-600 mb-4">👑 방장 전용 관리 메뉴</h2>
         
@@ -60,7 +59,6 @@
             </div>
         </div>
 
-        <!-- 3. 베팅 마감 기능 추가 -->
         <div class="bg-white p-4 rounded border mb-4">
             <h3 class="font-bold text-gray-700 mb-2">2. 베팅 마감 (수정 불가)</h3>
             <div class="flex gap-2 items-center">
@@ -71,7 +69,7 @@
 
         <div class="bg-white p-4 rounded border mb-6">
             <h3 class="font-bold text-gray-700 mb-2">3. 경기 결과 입력 (정산)</h3>
-            <div class="flex flex-wrap gap-2 items-center mb-2">
+            <div class="flex gap-2 items-center mb-2">
                 <input type="number" id="finish-match-id" class="w-24 border rounded p-2" placeholder="ID">
                 <input type="number" id="finish-scoreA" class="w-16 border rounded p-2" placeholder="A점수">
                 <span class="font-bold">:</span>
@@ -95,9 +93,8 @@
 
         function unlockAdmin() {
             const input = prompt("방장 비밀번호:");
-            if (input === ADMIN_PASSWORD) {
-                document.getElementById('admin-menu').classList.remove('hidden');
-            } else { alert("틀렸습니다."); }
+            if (input === ADMIN_PASSWORD) document.getElementById('admin-menu').classList.remove('hidden');
+            else alert("틀렸습니다.");
         }
 
         async function init() {
@@ -123,14 +120,13 @@
         }
 
         async function loadData() {
-            document.getElementById('matches-list').innerHTML = '<p class="text-center text-gray-500 font-bold">로딩 중...</p>';
             try {
                 const { data: matches, error: mError } = await client.from('matches').select('*').order('created_at', { ascending: true });
                 const { data: bets, error: bError } = await client.from('bets').select('*');
                 if(mError || bError) throw new Error("데이터 불러오기 실패");
                 renderMatches(matches || [], bets || []);
                 calculateLeaderboard(matches || [], bets || []);
-            } catch (err) { alert(err.message); }
+            } catch (err) { document.getElementById('matches-list').innerHTML = `<p class="text-center text-red-600">${err.message}</p>`; }
         }
 
         async function editMatch(matchId, oldA, oldB, oldH) {
@@ -148,7 +144,6 @@
             loadData();
         }
 
-        // 베팅 마감 함수
         async function closeBetting() {
             const id = document.getElementById('close-match-id').value;
             if(!id) return alert("경기 ID를 입력하세요.");
@@ -163,11 +158,13 @@
             matches.forEach(match => {
                 const matchBets = bets.filter(b => b.match_id === match.id);
                 const myBet = matchBets.find(b => b.player_name === currentUser);
+                const matchDate = formatDate(match.created_at);
                 
-                // 베팅 현황: 이름(픽)으로 표시
+                // ✅ 수정: A/B 대신 팀 이름으로 표시
                 let betStatusText = players.map(p => {
                     const b = matchBets.find(x => x.player_name === p);
-                    return b ? `<span class="font-bold ${b.pick === 'A' ? 'text-blue-600' : 'text-red-600'}">${p}(${b.pick})</span>` : `<span class="text-gray-400">${p}(-)</span>`;
+                    const teamName = b ? (b.pick === 'A' ? match.team_a : match.team_b) : '-';
+                    return b ? `<span class="font-bold ${b.pick === 'A' ? 'text-blue-600' : 'text-red-600'}">${p}(${teamName})</span>` : `<span class="text-gray-400">${p}(-)</span>`;
                 }).join(' / ');
 
                 let cardHTML = `
@@ -197,18 +194,17 @@
                     <div class="text-xs text-center mt-2 p-2 bg-gray-100 rounded">베팅 현황: ${betStatusText}</div>
                     `;
                 } else {
-                    // finished
                     const sA = Number(match.score_a); const sB = Number(match.score_b); const h = Number(match.handicap);
                     const adjustedA = sA + h;
                     let result = (adjustedA > sB) ? 'A' : (adjustedA < sB) ? 'B' : 'D';
-                    let text = (result === 'A') ? 'A승' : (result === 'B') ? 'B승' : '무승부';
+                    let text = (result === 'A') ? match.team_a+' 승' : (result === 'B') ? match.team_b+' 승' : '무승부';
                     cardHTML += `
                     <div class="mt-3 cursor-pointer flex justify-between items-center" onclick="toggleMatch('m-${match.id}', this.querySelector('.toggle-btn'))">
                         <span class="font-bold">${match.team_a} vs ${match.team_b}</span>
                         <span class="toggle-btn text-xs bg-gray-200 px-2 py-1 rounded">펼치기 ▼</span>
                     </div>
                     <div id="m-${match.id}" class="hidden mt-2 p-2 bg-gray-800 text-white rounded text-xs text-center">
-                        스코어: ${sA}:${sB} (핸디 결과: ${text})
+                        스코어: ${sA}:${sB} (${text})
                     </div>`;
                 }
                 cardHTML += `</div>`;
@@ -216,10 +212,6 @@
             });
         }
 
-        // 나머지 함수들 (calculateLeaderboard, placeBet, createMatch, finishMatch, resetAllMatches) 생략 없이 동일하게 유지됨
-        // (코드가 너무 길어지면 깃허브 저장시 오류날 수 있으니, 아래 로직은 위쪽 로직들과 합쳐서 넣어줘)
-        
-        // [위의 코드들과 합치기 위해 필요한 함수들을 아래 붙여넣기]
         function calculateLeaderboard(matches, bets) {
             const finishedMatches = matches.filter(m => m.status === 'finished');
             let misses = { '박형철': 0, '와대': 0, '손호민': 0, '최석훈': 0 };
@@ -240,10 +232,8 @@
 
         async function placeBet(matchId, pick) {
             if(!currentUser) return alert('이름을 먼저 선택하세요.');
-            // 경기 마감 여부 확인
             const { data: m } = await client.from('matches').select('status').eq('id', matchId).single();
             if(m.status !== 'open') return alert('베팅이 마감된 경기입니다.');
-            
             await client.from('bets').delete().match({ match_id: matchId, player_name: currentUser });
             await client.from('bets').insert({ match_id: matchId, player_name: currentUser, pick: pick });
             loadData();
