@@ -51,7 +51,6 @@
                 <input type="date" id="sync-date" class="border p-2 rounded text-sm flex-grow">
                 <button onclick="handleAdminAction('sync')" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700 transition text-sm whitespace-nowrap">🔄 가져오기</button>
             </div>
-            <p class="text-[11px] text-gray-600 font-medium">※ 날짜를 선택하고 가져오기를 누르면 새 경기가 등록되고, 종료된 경기는 스코어가 기입됩니다. (한국시간 기준 필터링 적용)</p>
         </div>
 
         <div class="bg-white p-4 rounded border mb-4">
@@ -65,9 +64,19 @@
             <button onclick="handleAdminAction('create')" class="w-full bg-gray-600 text-white p-2 rounded font-bold hover:bg-gray-700 text-sm">수동 열기</button>
         </div>
 
-        <div class="bg-white p-4 rounded border mb-6">
+        <div class="bg-white p-4 rounded border mb-4">
             <h3 class="font-bold text-gray-700 mb-2">2. 경기 관리 (핸디캡 / 결과 입력)</h3>
             <div id="admin-result-list" class="space-y-3 text-sm"></div>
+        </div>
+
+        <div class="bg-gray-800 p-4 rounded border mb-6 text-white h-48 flex flex-col">
+            <div class="flex justify-between items-center mb-2 border-b border-gray-600 pb-2">
+                <h3 class="font-bold text-gray-200">🔍 최근 행동 로그 (최대 50개)</h3>
+                <button onclick="handleAdminAction('clear_logs')" class="text-xs bg-red-600 px-2 py-1 rounded">로그 삭제</button>
+            </div>
+            <div id="admin-log-list" class="overflow-y-auto flex-grow space-y-1 text-xs text-gray-300 font-mono">
+                기록된 로그가 없습니다.
+            </div>
         </div>
 
         <div class="bg-red-100 p-4 rounded border border-red-300">
@@ -99,6 +108,31 @@
             "England": "잉글랜드", "Croatia": "크로아티아", "DR Congo": "콩고민주공화국", "Congo DR": "콩고민주공화국", "Democratic Republic of the Congo": "콩고민주공화국", "Panama": "파나마"
         };
 
+        // ✅ 로그 기록용 함수 (용량 방지를 위해 별도 테이블에 저장)
+        async function logAction(actionType, details) {
+            const user = currentUser || '알수없음';
+            try {
+                await client.from('action_logs').insert({ user_name: user, action_type: actionType, details: details });
+                if(sessionStorage.getItem('isAdmin') === 'true') fetchLogs(); // 관리자 모드 켜져있으면 화면 즉시 갱신
+            } catch(e) { console.error("로그 저장 실패", e); }
+        }
+
+        // ✅ 최근 50개 로그 불러오기
+        async function fetchLogs() {
+            try {
+                const { data: logs } = await client.from('action_logs').select('*').order('created_at', { ascending: false }).limit(50);
+                const logContainer = document.getElementById('admin-log-list');
+                if(!logs || logs.length === 0) {
+                    logContainer.innerHTML = "기록된 로그가 없습니다.";
+                    return;
+                }
+                logContainer.innerHTML = logs.map(l => {
+                    const time = new Date(l.created_at).toLocaleTimeString('ko-KR', {hour: '2-digit', minute:'2-digit'});
+                    return `<div><span class="text-gray-500">[${time}]</span> <span class="text-blue-300">${l.user_name}</span>: <span class="text-yellow-300">${l.action_type}</span> <span class="text-gray-400">- ${l.details}</span></div>`;
+                }).join('');
+            } catch(e) { console.error(e); }
+        }
+
         function setSyncDateToTomorrow() {
             const now = new Date();
             const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000 + (9 * 60 * 60 * 1000));
@@ -114,7 +148,12 @@
             loadData(); 
         }
 
-        function saveUser() { currentUser = document.getElementById('current-user').value; localStorage.setItem('worldcupUser', currentUser); loadData(); }
+        function saveUser() { 
+            currentUser = document.getElementById('current-user').value; 
+            localStorage.setItem('worldcupUser', currentUser); 
+            logAction('접속/이름변경', `${currentUser} 선택함`);
+            loadData(); 
+        }
 
         function checkAuth() {
             if (sessionStorage.getItem('isAdmin') === 'true') return true;
@@ -125,24 +164,37 @@
 
         function handleAdminAction(action, ...args) {
             if(action !== 'show_menu' && !checkAuth()) return;
-            if(action === 'show_menu') document.getElementById('admin-menu').classList.remove('hidden');
+            if(action === 'show_menu') {
+                document.getElementById('admin-menu').classList.remove('hidden');
+                fetchLogs(); // 메뉴 열 때 로그 가져오기
+            }
             if(action === 'create') createMatch();
             if(action === 'finish') finishMatch(args[0]);
             if(action === 'paid') markAsPaid(args[0]);
             if(action === 'close') closeBetting(args[0]);
             if(action === 'sync') syncWorldCup();
             if(action === 'set_handi') updateHandicap(args[0]);
+            if(action === 'clear_logs') clearLogs();
             if(action === 'reset') resetAllMatches();
         }
 
         function logoutAdmin() { sessionStorage.removeItem('isAdmin'); document.getElementById('admin-menu').classList.add('hidden'); }
 
+        // ✅ 로그 전체 삭제 (수동 용량 관리)
+        async function clearLogs() {
+            if(!confirm("모든 로그 기록을 삭제하시겠습니까?")) return;
+            await client.from('action_logs').delete().neq('id', 0);
+            logAction('시스템', '모든 로그를 삭제했습니다.');
+            fetchLogs();
+        }
+
         async function syncWorldCup() {
             try {
-                let dateVal = document.getElementById('sync-date').value; // "YYYY-MM-DD"
+                let dateVal = document.getElementById('sync-date').value;
                 if(!dateVal) return alert("날짜를 선택하세요");
                 
-                // 한국시간 기준을 완벽히 가져오기 위해, 선택된 날짜와 그 전날 ESPN 데이터를 모두 호출합니다.
+                logAction('API동기화', `${dateVal} 데이터 가져오기 시도`);
+
                 const targetDate = new Date(dateVal);
                 const prevDate = new Date(targetDate);
                 prevDate.setDate(targetDate.getDate() - 1);
@@ -162,19 +214,17 @@
                 if (data1.events) allEvents = allEvents.concat(data1.events);
                 if (data2.events) allEvents = allEvents.concat(data2.events);
 
-                // 중복 이벤트 제거
                 const uniqueEvents = Array.from(new Map(allEvents.map(e => [e.id, e])).values());
 
                 const { data: dbMatches } = await client.from('matches').select('*');
                 let newCount = 0, updateCount = 0;
 
                 for (const event of uniqueEvents) {
-                    // 이벤트 날짜를 KST로 변환하여 사용자가 선택한 날짜와 비교
                     const matchDateUtc = new Date(event.date);
                     const kstTime = matchDateUtc.getTime() + (9 * 60 * 60 * 1000);
-                    const matchKstStr = new Date(kstTime).toISOString().split('T')[0]; // "YYYY-MM-DD"
+                    const matchKstStr = new Date(kstTime).toISOString().split('T')[0];
                     
-                    if (matchKstStr !== dateVal) continue; // 선택한 KST 날짜가 아니면 패스
+                    if (matchKstStr !== dateVal) continue;
 
                     const comp = event.competitions[0];
                     const home = comp.competitors.find(c => c.homeAway === 'home');
@@ -202,14 +252,20 @@
                     }
                 }
                 alert(`🌐 동기화 완료! (한국시간 ${dateVal} 기준)\n새로운 경기: ${newCount}건\n자동 정산: ${updateCount}건`);
+                logAction('API동기화', `완료 (신규:${newCount}, 정산:${updateCount})`);
                 loadData();
-            } catch(e) { alert("동기화 오류: API 상태 확인 필요"); console.error(e); }
+            } catch(e) { 
+                alert("동기화 오류: API 상태 확인 필요"); 
+                logAction('에러', 'API 동기화 실패');
+                console.error(e); 
+            }
         }
 
         async function updateHandicap(id) {
             const h = parseFloat(document.getElementById(`h-${id}`).value);
             if(isNaN(h)) return alert("정확한 숫자를 입력하세요.");
             await client.from('matches').update({ handicap: h }).match({ id: id });
+            logAction('핸디캡변경', `경기ID:${id} 핸디캡을 ${h}로 변경`);
             alert("핸디캡이 적용되었습니다.");
             loadData();
         }
@@ -335,8 +391,8 @@
                         <p class="text-xs text-blue-600 font-bold mt-1">핸디캡(A): ${match.handicap}</p>
                     </div>
                     <div class="flex gap-2 mb-3">
-                        <button onclick="placeBet(${match.id}, 'A')" class="${myBet?.pick === 'A'?'bg-blue-600 text-white':'bg-gray-200'} w-1/2 py-2 rounded font-bold hover:opacity-80 transition">${match.team_a} 승</button>
-                        <button onclick="placeBet(${match.id}, 'B')" class="${myBet?.pick === 'B'?'bg-red-600 text-white':'bg-gray-200'} w-1/2 py-2 rounded font-bold hover:opacity-80 transition">${match.team_b} 승</button>
+                        <button onclick="placeBet(${match.id}, 'A', '${match.team_a}')" class="${myBet?.pick === 'A'?'bg-blue-600 text-white':'bg-gray-200'} w-1/2 py-2 rounded font-bold hover:opacity-80 transition">${match.team_a} 승</button>
+                        <button onclick="placeBet(${match.id}, 'B', '${match.team_b}')" class="${myBet?.pick === 'B'?'bg-red-600 text-white':'bg-gray-200'} w-1/2 py-2 rounded font-bold hover:opacity-80 transition">${match.team_b} 승</button>
                     </div>
                     <div class="text-xs text-center mt-2 p-2 bg-gray-100 rounded">현재 베팅: ${betStatusText}</div>
                 </div>`;
@@ -363,7 +419,7 @@
                 `<li class="flex justify-between bg-gray-700 p-2 rounded"><span>👤 ${n}</span><span class="${c>0?'text-red-400':'text-green-400'} font-bold">${(c * 1500).toLocaleString()}원 (${c}회)</span></li>`).join('');
         }
 
-        async function placeBet(matchId, pick) {
+        async function placeBet(matchId, pick, teamName) {
             if (!currentUser) return alert('맨 위에서 이름을 먼저 선택해주세요!');
             
             const { data: m } = await client.from('matches').select('status').eq('id', matchId).single();
@@ -373,15 +429,27 @@
             if (existingBet && existingBet.length > 0) return alert('낙장불입! 한 번 선택한 베팅은 변경할 수 없습니다.\n잘못 누른 경우 방장에게 수정을 요청하세요.');
 
             await client.from('bets').insert({ match_id: matchId, player_name: currentUser, pick: pick });
+            logAction('베팅', `경기ID:${matchId}에 [${teamName}] 베팅함`);
             loadData();
         }
 
-        async function closeBetting(id) { await client.from('matches').update({ status: 'closed' }).match({ id: id }); loadData(); }
-        async function markAsPaid(id) { await client.from('matches').update({ status: 'paid' }).match({ id: id }); loadData(); }
+        async function closeBetting(id) { 
+            await client.from('matches').update({ status: 'closed' }).match({ id: id }); 
+            logAction('마감', `경기ID:${id} 베팅 마감 처리`);
+            loadData(); 
+        }
+        
+        async function markAsPaid(id) { 
+            await client.from('matches').update({ status: 'paid' }).match({ id: id }); 
+            logAction('수금완료', `경기ID:${id} 수금 완료 처리`);
+            loadData(); 
+        }
+        
         async function finishMatch(id) {
             const sA = document.getElementById(`scoreA-${id}`).value, sB = document.getElementById(`scoreB-${id}`).value;
             if(!sA || !sB) return alert("점수 입력 필수!");
             await client.from('matches').update({ score_a: sA, score_b: sB, status: 'finished' }).match({ id: id });
+            logAction('결과확정', `경기ID:${id} 스코어 ${sA}:${sB} 입력`);
             loadData();
         }
 
@@ -389,6 +457,7 @@
             const tA = document.getElementById('new-teamA').value, tB = document.getElementById('new-teamB').value, h = parseFloat(document.getElementById('new-handi').value);
             if(!tA || !tB || isNaN(h)) return alert("국가명과 핸디캡을 정확히 입력하세요.");
             await client.from('matches').insert({ team_a: tA, team_b: tB, handicap: h, status: 'open', created_at: new Date() });
+            logAction('수동등록', `${tA} vs ${tB} (핸디:${h}) 등록`);
             loadData();
         }
 
@@ -396,14 +465,18 @@
             if(!confirm("모든 기록을 초기화하시겠습니까? 복구할 수 없습니다.")) return;
             await client.from('bets').delete().neq('id', 0);
             await client.from('matches').delete().neq('id', 0);
+            logAction('시스템', '모든 데이터가 초기화되었습니다.');
             loadData();
         }
 
         async function editMatch(id, a, b, h) {
             if(!checkAuth()) return;
             const nA = prompt("팀A 수정:", a), nB = prompt("팀B 수정:", b), nH = prompt("핸디:", h);
-            if(nA && nB) await client.from('matches').update({ team_a: nA, team_b: nB, handicap: parseFloat(nH) }).match({ id: id });
-            loadData();
+            if(nA && nB) {
+                await client.from('matches').update({ team_a: nA, team_b: nB, handicap: parseFloat(nH) }).match({ id: id });
+                logAction('경기수정', `경기ID:${id} 수정됨`);
+                loadData();
+            }
         }
 
         async function editBetsAdmin(matchId) {
@@ -418,6 +491,7 @@
             for(let i=0; i<4; i++) {
                 if(picks[i] === 'A' || picks[i] === 'B') await client.from('bets').insert({ match_id: matchId, player_name: players[i], pick: picks[i] });
             }
+            logAction('강제픽수정', `경기ID:${matchId} 방장이 픽 수정 (${picks.join(',')})`);
             alert("베팅 기록이 수정되었습니다.");
             loadData();
         }
@@ -427,6 +501,7 @@
             if(!confirm("삭제하시겠습니까?")) return;
             await client.from('bets').delete().match({ match_id: id });
             await client.from('matches').delete().match({ id: id });
+            logAction('삭제', `경기ID:${id} 삭제됨`);
             loadData();
         }
 
