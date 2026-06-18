@@ -27,7 +27,7 @@
             <div class="flex justify-between items-end border-b border-gray-600 pb-2 mb-3">
                 <h3 class="text-lg font-bold text-yellow-400">💸 개인별 누적 성의 (1,500원/회)</h3>
                 <div class="text-right">
-                    <span class="text-xs text-gray-300">총 모금액</span>
+                    <span class="text-xs text-gray-300">총 모금액 (수금완료 기준)</span>
                     <br>
                     <span id="total-fund" class="text-2xl font-black text-green-400">0원</span>
                 </div>
@@ -101,9 +101,10 @@
         let currentUser = localStorage.getItem('worldcupUser') || '';
         let currentIP = 'IP확인불가'; 
 
+        // ✅ 보스니아 하이픈 버전을 사전에 추가했습니다.
         const teamDictionary = {
             "Mexico": "멕시코", "Czech Republic": "체코", "Czechia": "체코", "South Africa": "남아프리카공화국", "South Korea": "대한민국", "Korea Republic": "대한민국",
-            "Canada": "캐나다", "Bosnia and Herzegovina": "보스니아 헤르체고비나", "Bosnia": "보스니아 헤르체고비나", "Qatar": "카타르", "Switzerland": "스위스",
+            "Canada": "캐나다", "Bosnia and Herzegovina": "보스니아 헤르체고비나", "Bosnia": "보스니아 헤르체고비나", "Bosnia-Herzegovina": "보스니아 헤르체고비나", "Qatar": "카타르", "Switzerland": "스위스",
             "Brazil": "브라질", "Haiti": "아이티", "Morocco": "모로코", "Scotland": "스코틀랜드",
             "United States": "미국", "USA": "미국", "Australia": "호주", "Paraguay": "파라과이", "Turkey": "튀르키예", "Türkiye": "튀르키예",
             "Curaçao": "퀴라소", "Curacao": "퀴라소", "Ecuador": "에콰도르", "Germany": "독일", "Ivory Coast": "코트디부아르", "Côte d'Ivoire": "코트디부아르",
@@ -197,7 +198,6 @@
             fetchLogs();
         }
 
-        // 수금 완료 경기 토글 함수
         function togglePaidMatches() {
             const el = document.getElementById('paid-matches-container');
             const icon = document.getElementById('paid-toggle-icon');
@@ -325,9 +325,7 @@
             container.innerHTML = '';
             
             const paidMatches = matches.filter(m => m.status === 'paid');
-            const otherMatches = matches.filter(m => m.status !== 'paid');
 
-            // 수금 완료 경기 접기/펴기 영역 생성
             if (paidMatches.length > 0) {
                 container.innerHTML += `
                     <div class="mb-6">
@@ -346,7 +344,6 @@
                 const matchBets = bets.filter(b => b.match_id === match.id);
                 const myBet = matchBets.find(b => b.player_name === currentUser);
                 
-                // 블라인드 베팅 로직 적용
                 let betStatusText = players.map(p => {
                     const b = matchBets.find(x => x.player_name === p);
                     if (match.status === 'open') {
@@ -436,27 +433,46 @@
             });
         }
 
+        // ✅ 총 장부금액이 유실되지 않도록 정산완료/수금완료 상태를 명확히 나누어 계산합니다.
         function calculateLeaderboard(matches, bets) {
-            const settledMatches = matches.filter(m => m.status === 'finished' || m.status === 'paid');
-            let misses = { '박형철': 0, '와대': 0, '손호민': 0, '최석훈': 0 };
-            let totalMisses = 0;
+            const allSettled = matches.filter(m => m.status === 'finished' || m.status === 'paid');
+            const onlyPaid = matches.filter(m => m.status === 'paid');
             
-            settledMatches.forEach(match => {
+            let misses = { '박형철': 0, '와대': 0, '손호민': 0, '최석훈': 0 };
+            let paidMissesCount = 0;
+            
+            // 1. 개인 랭킹 점수 계산 (정산완료 + 수금완료 전체 누적)
+            allSettled.forEach(match => {
+                const matchBets = bets.filter(b => b.match_id === match.id);
                 const adjA = Number(match.score_a) + Number(match.handicap);
                 let winner = (adjA > Number(match.score_b)) ? 'A' : (adjA < Number(match.score_b)) ? 'B' : 'D';
                 if(winner !== 'D') {
                     players.forEach(p => {
-                        const bet = bets.find(b => b.match_id === match.id && b.player_name === p);
+                        const bet = matchBets.find(b => b.player_name === p);
                         if (!bet || bet.pick !== winner) {
                             misses[p]++;
-                            totalMisses++;
+                        }
+                    });
+                }
+            });
+
+            // 2. 화면 상단 '총 모금액' 계산 (오직 실입금 처리된 paid 경기들만 반영)
+            onlyPaid.forEach(match => {
+                const matchBets = bets.filter(b => b.match_id === match.id);
+                const adjA = Number(match.score_a) + Number(match.handicap);
+                let winner = (adjA > Number(match.score_b)) ? 'A' : (adjA < Number(match.score_b)) ? 'B' : 'D';
+                if(winner !== 'D') {
+                    players.forEach(p => {
+                        const bet = matchBets.find(b => b.player_name === p);
+                        if (!bet || bet.pick !== winner) {
+                            paidMissesCount++;
                         }
                     });
                 }
             });
 
             // 총 모금액 화면에 업데이트
-            document.getElementById('total-fund').innerText = (totalMisses * 1500).toLocaleString() + '원';
+            document.getElementById('total-fund').innerText = (paidMissesCount * 1500).toLocaleString() + '원';
 
             const sorted = Object.entries(misses).sort((a,b) => b[1]-a[1]);
             document.getElementById('leaderboard').innerHTML = sorted.map(([n, c]) => 
