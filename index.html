@@ -48,7 +48,7 @@
 
             <div class="mt-4 pt-3 border-t border-gray-600">
                 <h4 class="text-sm font-bold text-red-400 mb-2 flex items-center gap-1">🚨 오늘 송금할 미납액 (수금 전)</h4>
-                <ul id="pending-payments" class="space-y-1 text-sm text-gray-300">
+                <ul id="pending-payments" class="space-y-2 text-sm text-gray-300">
                     <li class="text-center text-gray-500 py-1 text-xs">오늘 정산할 요금이 없습니다 👏</li>
                 </ul>
             </div>
@@ -221,7 +221,8 @@
             if(action === 'show_menu') { document.getElementById('admin-menu').classList.remove('hidden'); fetchLogs(); }
             if(action === 'create') createMatch();
             if(action === 'finish') finishMatch(args[0]);
-            if(action === 'paid') markAsPaid(args[0]);
+            if(action === 'paid') markAsPaid(args[0]); // 전체 수금
+            if(action === 'pay_person') markPersonAsPaid(args[0]); // 개인 수금
             if(action === 'close') closeBetting(args[0]);
             if(action === 'sync') syncWorldCup();
             if(action === 'set_handi') updateHandicap(args[0]);
@@ -330,6 +331,7 @@
         async function loadData() {
             try {
                 const { data: matches } = await client.from('matches').select('*').order('created_at', { ascending: true });
+                // bet 테이블에서 is_paid까지 가져옵니다. (Supabase에서 컬럼을 추가했다면 정상 작동)
                 const { data: bets } = await client.from('bets').select('*');
                 const statusOrder = { 'open': 1, 'closed': 2, 'finished': 3, 'paid': 4 };
                 matches.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
@@ -338,6 +340,52 @@
                 renderMatches(matches || [], bets || []);
                 renderAdminList(matches || []);
             } catch (err) { console.error(err); }
+        }
+
+        // ✅ 방장이 특정 사람의 미납액을 한방에 수금 완료시키는 마법의 함수
+        async function markPersonAsPaid(playerName) {
+            try {
+                // 현재 정산 완료된(돈 받아야 할) 경기들 불러오기
+                const { data: mData } = await client.from('matches').select('*').eq('status', 'finished');
+                const { data: bData } = await client.from('bets').select('*').eq('player_name', playerName);
+                
+                let updateIds = [];
+                let insertBets = [];
+
+                mData.forEach(match => {
+                    const adjA = Number(match.score_a) + Number(match.handicap);
+                    let winner = (adjA > Number(match.score_b)) ? 'A' : (adjA < Number(match.score_b)) ? 'B' : 'D';
+                    
+                    if(winner !== 'D') {
+                        const bet = bData.find(b => b.match_id === match.id);
+                        if (!bet) {
+                            // 미참여 패배인 경우: 빈 베팅을 만들면서 is_paid=true로 넣음
+                            insertBets.push({ match_id: match.id, player_name: playerName, pick: 'X', is_paid: true });
+                        } else if (bet.pick !== winner && !bet.is_paid) {
+                            // 일반 패배인데 아직 돈 안 낸 경우: 해당 베팅 id 수집
+                            updateIds.push(bet.id);
+                        }
+                    }
+                });
+
+                if (updateIds.length === 0 && insertBets.length === 0) {
+                    return alert(`${playerName} 님은 현재 수금할 내역이 없습니다.`);
+                }
+
+                // DB 업데이트 및 삽입
+                if (updateIds.length > 0) {
+                    await client.from('bets').update({ is_paid: true }).in('id', updateIds);
+                }
+                if (insertBets.length > 0) {
+                    await client.from('bets').insert(insertBets);
+                }
+                
+                logAction('개별수금', `${playerName} 미납액 수금 완료`);
+                loadData(); // 화면 즉시 갱신
+            } catch(e) {
+                console.error(e);
+                alert("수금 처리 중 오류가 발생했습니다.\n(Supabase SQL Editor에서 ALTER TABLE 명령어를 실행했는지 확인해주세요!)");
+            }
         }
 
         function renderAdminList(matches) {
@@ -430,13 +478,13 @@
                             if(!b || b.pick !== winner) losers.push(p);
                         });
                     }
-                    let penaltyText = winner === 'D' ? '무승부 (금액 없음)' : (losers.length > 0 ? `🚨 낼 사람: ${losers.join(', ')}` : '🎉 전원 정답!');
+                    let penaltyText = winner === 'D' ? '무승부 (금액 없음)' : (losers.length > 0 ? `🚨 미납자: ${losers.join(', ')}` : '🎉 전원 정답!');
 
                     container.insertAdjacentHTML('beforeend', `
                     <div class="border-2 border-red-300 bg-red-50 rounded-2xl p-6 relative shadow-md mb-6">
                         <span class="absolute -top-3 left-4 bg-red-600 text-white px-3 py-1 rounded text-xs font-bold shadow animate-pulse">정산완료 (수금 대기중)</span>
                         <div class="absolute top-2 right-4 flex gap-1 items-center">
-                            <button onclick="handleAdminAction('paid', ${match.id})" class="text-xs font-black bg-green-500 text-white px-3 py-1.5 rounded shadow hover:bg-green-600">💰수금완료 처리</button>
+                            <button onclick="handleAdminAction('paid', ${match.id})" class="text-xs font-black bg-green-500 text-white px-3 py-1.5 rounded shadow hover:bg-green-600" title="이 경기의 모든 사람이 돈을 냈을 때 누르세요">💰전체 수금처리</button>
                             <button onclick="editBetsAdmin(${match.id})" class="text-xs bg-purple-200 text-purple-800 px-2 py-1.5 rounded font-bold">✏️픽수정</button>
                             <button onclick="deleteMatch(${match.id})" class="text-xs bg-gray-300 text-gray-700 px-2 py-1.5 rounded">🗑️</button>
                         </div>
@@ -483,10 +531,10 @@
             const onlyFinished = matches.filter(m => m.status === 'finished'); 
             
             let misses = { '박형철': 0, '와대': 0, '손호민': 0, '최석훈': 0 };
-            // ✅ 숫자 세기에서 배열 저장으로 변경하여 틀린 경기 목록을 모읍니다
             let pendingDetails = { '박형철': [], '와대': [], '손호민': [], '최석훈': [] }; 
             let totalSettledCount = 0; 
             
+            // 1. 전체 누적 계산 & 총 모금액(실제 받은 돈) 계산
             allSettled.forEach(match => {
                 const matchBets = bets.filter(b => b.match_id === match.id);
                 const adjA = Number(match.score_a) + Number(match.handicap);
@@ -495,13 +543,19 @@
                     players.forEach(p => {
                         const bet = matchBets.find(b => b.player_name === p);
                         if (!bet || bet.pick !== winner) {
-                            misses[p]++;
-                            totalSettledCount++; 
+                            misses[p]++; // 평생 누적 틀린 횟수
+                            
+                            // 경기 자체가 수금완료 상태이거나, 개인적으로 돈을 낸 경우만 총액에 반영!
+                            const isPaid = (match.status === 'paid') || (bet && bet.is_paid);
+                            if (isPaid) {
+                                totalSettledCount++; 
+                            }
                         }
                     });
                 }
             });
 
+            // 2. 미납액 (돈 안 낸 틀린 경기 목록) 모으기
             onlyFinished.forEach(match => {
                 const matchBets = bets.filter(b => b.match_id === match.id);
                 const adjA = Number(match.score_a) + Number(match.handicap);
@@ -509,8 +563,8 @@
                 if(winner !== 'D') {
                     players.forEach(p => {
                         const bet = matchBets.find(b => b.player_name === p);
-                        if (!bet || bet.pick !== winner) {
-                            // ✅ 틀린 경기 이름을 배열에 저장합니다
+                        // 틀렸는데 개별적으로 돈을 안 낸 경우에만 목록에 추가
+                        if ((!bet || bet.pick !== winner) && (!bet || !bet.is_paid)) {
                             pendingDetails[p].push(`${match.team_a} vs ${match.team_b}`);
                         }
                     });
@@ -533,18 +587,21 @@
                 </li>`;
             }).join('');
 
-            // ✅ 틀린 경기 목록(배열)을 꺼내서 화면에 예쁘게 렌더링
+            // ✅ 개별 수금 버튼 + 틀린 경기 이름 목록 렌더링
             const pendingHtml = Object.entries(pendingDetails)
                 .filter(([n, matchesArr]) => matchesArr.length > 0)
                 .map(([n, matchesArr]) => {
                     const amount = matchesArr.length * 1500;
                     const matchText = matchesArr.join(', ');
                     return `<li class="flex flex-col bg-red-900 bg-opacity-40 p-3 rounded-lg border border-red-800 shadow-sm mb-2">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-red-300 tracking-wide">💸 ${n}</span>
-                            <span class="text-red-400 font-black text-base">${amount.toLocaleString()}원</span>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <span class="font-bold text-red-300 tracking-wide text-base">💸 ${n}</span>
+                            <div class="flex items-center gap-3">
+                                <span class="text-red-400 font-black text-base">${amount.toLocaleString()}원</span>
+                                <button onclick="handleAdminAction('pay_person', '${n}')" class="bg-green-600 hover:bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded shadow-sm transition">개인별 수금완료</button>
+                            </div>
                         </div>
-                        <div class="text-xs text-gray-400">(${matchText})</div>
+                        <div class="text-xs text-gray-400 leading-relaxed break-keep pr-2">(${matchText})</div>
                     </li>`;
                 })
                 .join('');
@@ -575,6 +632,7 @@
             loadData(); 
         }
         
+        // 전체 수금 처리
         async function markAsPaid(id) { 
             await client.from('matches').update({ status: 'paid' }).eq('id', id); 
             logAction('수금완료', `경기ID:${id} 수금 완료 처리`);
