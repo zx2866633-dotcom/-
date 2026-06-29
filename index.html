@@ -138,8 +138,6 @@
         let isAdminLoggedIn = false; 
         let isPublicSyncing = false;
         let trendChart = null; 
-
-        // ✅ 누적된 조별리그 전력 추출을 위한 내부 DB 백업용 글로벌 변수 생성
         let allDbMatches = [];
 
         const teamDictionary = {
@@ -158,7 +156,6 @@
             "Ghana": "가나"
         };
 
-        // ✅ 불안정한 외부 API 연동 대신, 우리 DB에 완벽히 쌓여있는 전체 월드컵 기록(조별리그 포함)을 매칭하여 즉시 표출하도록 전면 개편
         function toggleMatchHistory(matchId, korTeamA, korTeamB) {
             const el = document.getElementById(`history-box-${matchId}`);
             if (!el.classList.contains('hidden')) {
@@ -169,7 +166,6 @@
             let historyA = [];
             let historyB = [];
 
-            // 우리 DB에 쌓여있는 경기 데이터 중 정산 완료된 모든 조별리그+토너먼트 경기 추출
             allDbMatches.forEach(match => {
                 if (match.status === 'finished' || match.status === 'paid') {
                     const hName = match.team_a;
@@ -178,10 +174,10 @@
                     const aScore = match.score_b;
                     
                     const matchHtml = `
-                        <div class="flex justify-between items-center text-[10px] bg-white p-1.5 rounded border border-gray-100 font-mono mb-1 shadow-sm animate-fade-in">
-                            <span class="text-gray-700 truncate w-2/5 font-bold">${hName}</span>
-                            <span class="font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">${hScore} : ${aScore}</span>
-                            <span class="text-gray-700 truncate w-2/5 text-right font-bold">${aName}</span>
+                        <div class="flex justify-between items-center text-xs bg-gray-50 py-2 px-3 rounded-lg border border-gray-200 font-mono shadow-sm animate-fade-in mb-1.5">
+                            <span class="text-gray-800 font-bold truncate flex-1 text-left">${hName}</span>
+                            <span class="font-black text-indigo-700 bg-white px-3 py-1 rounded-md border border-indigo-200 text-center mx-2">${hScore} : ${aScore}</span>
+                            <span class="text-gray-800 font-bold truncate flex-1 text-right">${aName}</span>
                         </div>`;
 
                     if (hName === korTeamA || aName === korTeamA) historyA.push(matchHtml);
@@ -189,25 +185,20 @@
                 }
             });
 
-            // 가장 최근 경기(최신순)로 정렬하기 위해 배열 뒤집기
-            historyA.reverse();
-            historyB.reverse();
+            historyA.reverse(); historyB.reverse();
+            historyA = historyA.slice(0, 4); historyB = historyB.slice(0, 4);
 
-            // 가시성을 위해 각 국가별 최근 4경기씩 커트
-            historyA = historyA.slice(0, 4);
-            historyB = historyB.slice(0, 4);
-
-            const htmlA = historyA.length > 0 ? historyA.join('') : '<p class="text-[10px] text-gray-400 text-center mt-2">이전 경기 데이터 없음</p>';
-            const htmlB = historyB.length > 0 ? historyB.join('') : '<p class="text-[10px] text-gray-400 text-center mt-2">이전 경기 데이터 없음</p>';
+            const htmlA = historyA.length > 0 ? historyA.join('') : '<p class="text-xs text-gray-400 text-center py-2">이전 경기 데이터 없음</p>';
+            const htmlB = historyB.length > 0 ? historyB.join('') : '<p class="text-xs text-gray-400 text-center py-2">이전 경기 데이터 없음</p>';
 
             el.innerHTML = `
-                <div class="flex gap-2">
-                    <div class="w-1/2 border-r border-gray-200 pr-2">
-                        <p class="text-[11px] font-black text-blue-700 mb-2 border-b border-blue-200 pb-1 text-center">${korTeamA} 최근전적</p>
+                <div class="flex flex-col gap-4">
+                    <div class="bg-white rounded-xl p-3 shadow border border-gray-100">
+                        <p class="text-sm font-black text-blue-700 mb-3 border-b border-blue-100 pb-2 text-center">📈 ${korTeamA} 최근전적</p>
                         <div class="flex flex-col">${htmlA}</div>
                     </div>
-                    <div class="w-1/2 pl-2">
-                        <p class="text-[11px] font-black text-red-700 mb-2 border-b border-red-200 pb-1 text-center">${korTeamB} 최근전적</p>
+                    <div class="bg-white rounded-xl p-3 shadow border border-gray-100">
+                        <p class="text-sm font-black text-red-700 mb-3 border-b border-red-100 pb-2 text-center">📈 ${korTeamB} 최근전적</p>
                         <div class="flex flex-col">${htmlB}</div>
                     </div>
                 </div>
@@ -366,7 +357,9 @@
                         }
                     } else {
                         let initialStatus = isFinished ? 'finished' : 'open';
-                        await client.from('matches').insert({ team_a: teamA, team_b: teamB, handicap: 0, status: initialStatus, score_a: scoreA, score_b: scoreB, created_at: event.date });
+                        await client.from('matches').insert({ 
+                            team_a: teamA, team_b: teamB, handicap: 0, status: initialStatus, score_a: scoreA, score_b: scoreB, created_at: event.date 
+                        });
                         newCount++;
                     }
                 }
@@ -478,7 +471,6 @@
                 const { data: matches } = await client.from('matches').select('*').order('created_at', { ascending: true });
                 const { data: bets } = await client.from('bets').select('*');
                 
-                // ✅ 로컬 DB 데이터 캐싱 완료 (전체 일정 매칭용)
                 allDbMatches = matches || []; 
                 
                 const statusOrder = { 'open': 1, 'closed': 2, 'finished': 3, 'paid': 4 };
@@ -582,6 +574,9 @@
                                 <span class="font-bold mx-1">${match.team_a} ${sA} : ${sB} ${match.team_b}</span>
                                 <br><span class="text-red-600 font-bold mt-1 inline-block">${penaltyText}</span>
                             </div>
+                            <div class="flex gap-1 ml-2">
+                                <button onclick="deleteMatch(${match.id})" class="text-[10px] bg-red-100 text-red-600 border border-red-200 px-2 py-1 rounded hover:bg-red-200">🗑️삭제</button>
+                            </div>
                         </div>
                     `);
                     return;
@@ -600,13 +595,13 @@
                     <div class="border-2 border-red-300 bg-red-50 rounded-2xl p-6 relative shadow-md mb-6">
                         <span class="absolute -top-3 left-4 bg-red-600 text-white px-3 py-1 rounded text-xs font-bold shadow animate-pulse">정산완료 (수금 대기중)</span>
                         <div class="absolute top-2 right-4 flex gap-1 items-center">
-                            <button onclick="handleAdminAction('paid', ${match.id})" class="text-xs font-black bg-green-500 text-white px-3 py-1.5 rounded shadow hover:bg-green-600">💰전체 수금처리</button>
-                            <button onclick="editBetsAdmin(${match.id})" class="text-xs bg-purple-200 text-purple-800 px-2 py-1.5 rounded font-bold">✏️픽수정</button>
-                            <button onclick="deleteMatch(${match.id})" class="text-xs bg-gray-300 text-gray-700 px-2 py-1.5 rounded">🗑️</button>
+                            <button onclick="handleAdminAction('paid', ${match.id})" class="text-[10px] font-black bg-green-500 text-white px-2 py-1.5 rounded shadow hover:bg-green-600">💰전체 수금</button>
+                            <button onclick="editBetsAdmin(${match.id})" class="text-[10px] bg-purple-100 text-purple-800 border border-purple-200 px-2 py-1.5 rounded font-bold hover:bg-purple-200">✏️픽수정</button>
+                            <button onclick="deleteMatch(${match.id})" class="text-[10px] bg-red-100 text-red-600 border border-red-200 px-2 py-1.5 rounded hover:bg-red-200 font-bold">🗑️삭제</button>
                         </div>
                         <div class="text-center mb-3 mt-4">
                             <span class="text-2xl font-black text-gray-800">${match.team_a}</span> <span class="mx-2 text-gray-400">vs</span> <span class="text-2xl font-black text-gray-800">${match.team_b}</span>
-                            <p class="text-sm text-blue-600 font-bold mt-1">핸디캡(A): ${match.handicap}</p>
+                            <p class="text-sm text-blue-600 font-bold mt-1 inline-block bg-blue-50 px-3 py-1 rounded-full border border-blue-100">핸디캡(A): ${match.handicap}</p>
                         </div>
                         <div class="bg-gray-800 text-white rounded-xl text-base p-4 text-center mb-3 shadow-inner">
                             <p class="font-bold">최종 스코어: <span class="text-yellow-300 text-xl">${sA} : ${sB}</span> (핸디 결과: ${winnerText})</p>
@@ -624,11 +619,12 @@
                     </span>
                     <div class="absolute top-2 right-4 flex gap-1 items-center">
                         <button onclick="editBetsAdmin(${match.id})" class="text-[10px] bg-purple-100 text-purple-800 font-bold border border-purple-300 px-2 py-1.5 rounded hover:bg-purple-200">✏️강제 픽수정</button>
-                        <button onclick="editMatch(${match.id}, '${match.team_a}', '${match.team_b}', ${match.handicap})" class="text-[10px] bg-gray-100 text-gray-600 border px-2 py-1.5 rounded">경기수정</button>
+                        <button onclick="promptEditMatch(${match.id})" class="text-[10px] bg-gray-100 text-gray-600 border border-gray-300 px-2 py-1.5 rounded hover:bg-gray-200">✏️경기수정</button>
+                        <button onclick="deleteMatch(${match.id})" class="text-[10px] bg-red-100 text-red-600 font-bold border border-red-200 px-2 py-1.5 rounded hover:bg-red-200">🗑️삭제</button>
                     </div>
                     <div class="text-center mb-5 mt-3">
                         <span class="text-2xl font-black text-gray-800">${match.team_a}</span> <span class="mx-2 text-gray-400 font-bold">vs</span> <span class="text-2xl font-black text-gray-800">${match.team_b}</span>
-                        <p class="text-sm text-blue-600 font-bold mt-2 bg-blue-50 inline-block px-3 py-1 rounded-full border border-blue-100">핸디캡(A): ${match.handicap}</p>
+                        <div class="mt-2 text-sm text-blue-600 font-bold bg-blue-50 inline-block px-3 py-1 rounded-full border border-blue-100">핸디캡(A): ${match.handicap}</div>
                     </div>
                     <div class="flex gap-3 mb-4">
                         <button onclick="placeBet(${match.id}, 'A', '${match.team_a}')" class="${myBet?.pick === 'A'?'bg-blue-600 text-white shadow-inner border-2 border-blue-800':'bg-gray-100 text-gray-700 border-2 border-gray-300 hover:bg-blue-50'} w-1/2 py-4 rounded-xl font-black transition text-lg">${match.team_a} 승</button>
@@ -740,7 +736,9 @@
         }
 
         async function createMatch() {
-            const tA = document.getElementById('new-teamA').value, tB = document.getElementById('new-teamB').value, h = parseFloat(document.getElementById('new-handi').value);
+            const tA = document.getElementById('new-teamA').value;
+            const tB = document.getElementById('new-teamB').value;
+            const h = parseFloat(document.getElementById('new-handi').value);
             if(!tA || !tB || isNaN(h)) return alert("국가명과 핸디캡을 정확히 입력하세요.");
             await client.from('matches').insert({ team_a: tA, team_b: tB, handicap: h, status: 'open', created_at: new Date() });
             logAction('수동등록', `${tA} vs ${tB} (핸디:${h}) 등록`);
@@ -754,10 +752,22 @@
             loadData();
         }
 
-        async function editMatch(id, a, b, h) {
+        function promptEditMatch(id) {
             if(!checkAuth()) return;
-            const nA = prompt("팀A 수정:", a), nB = prompt("팀B 수정:", b), nH = prompt("핸디:", h);
-            if(nA && nB) { await client.from('matches').update({ team_a: nA, team_b: nB, handicap: parseFloat(nH) }).eq('id', id); logAction('경기수정', `경기ID:${id} 수정됨`); loadData(); }
+            const match = allDbMatches.find(m => m.id === id);
+            if (!match) return;
+            
+            const nA = prompt("팀A 수정:", match.team_a);
+            if(nA === null) return;
+            const nB = prompt("팀B 수정:", match.team_b);
+            const nH = prompt("핸디캡 수정:", match.handicap);
+            
+            if(nA && nB && nH) {
+                client.from('matches').update({ team_a: nA, team_b: nB, handicap: parseFloat(nH) }).eq('id', id).then(() => {
+                    logAction('경기수정', `경기ID:${id} 수정됨`);
+                    loadData();
+                });
+            }
         }
 
         async function editBetsAdmin(matchId) {
