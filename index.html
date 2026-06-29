@@ -98,11 +98,10 @@
         <div class="bg-white p-4 rounded border mb-4">
             <h3 class="font-bold text-gray-700 mb-2">1. 수동 경기 등록</h3>
             <div class="flex flex-wrap gap-2 items-center mb-2">
-                <input type="text" id="new-teamA" class="w-20 border rounded p-2 text-sm text-center" placeholder="국가A">
+                <input type="text" id="new-teamA" class="w-24 border rounded p-2 text-sm text-center" placeholder="국가A">
                 <span class="font-bold text-gray-400">VS</span>
-                <input type="text" id="new-teamB" class="w-20 border rounded p-2 text-sm text-center" placeholder="국가B">
-                <input type="text" id="new-handi" class="w-14 border rounded p-2 text-sm text-center" placeholder="핸디" value="2.5">
-                <input type="text" id="new-odds" class="w-full mt-2 border rounded p-2 text-sm text-center" placeholder="배당 (예: 1.50 / 3.20)">
+                <input type="text" id="new-teamB" class="w-24 border rounded p-2 text-sm text-center" placeholder="국가B">
+                <input type="text" id="new-handi" class="w-16 border rounded p-2 text-sm text-center" placeholder="핸디" value="2.5">
             </div>
             <button onclick="handleAdminAction('create')" class="w-full bg-gray-600 text-white p-2 rounded font-bold hover:bg-gray-700 text-sm">수동 열기</button>
         </div>
@@ -139,6 +138,8 @@
         let isAdminLoggedIn = false; 
         let isPublicSyncing = false;
         let trendChart = null; 
+
+        // ✅ 누적된 조별리그 전력 추출을 위한 내부 DB 백업용 글로벌 변수 생성
         let allDbMatches = [];
 
         const teamDictionary = {
@@ -157,7 +158,7 @@
             "Ghana": "가나"
         };
 
-        // ✅ 전적 보기 UI 세로 묶음(가독성 대폭 개선)으로 완벽 수정
+        // ✅ 불안정한 외부 API 연동 대신, 우리 DB에 완벽히 쌓여있는 전체 월드컵 기록(조별리그 포함)을 매칭하여 즉시 표출하도록 전면 개편
         function toggleMatchHistory(matchId, korTeamA, korTeamB) {
             const el = document.getElementById(`history-box-${matchId}`);
             if (!el.classList.contains('hidden')) {
@@ -168,6 +169,7 @@
             let historyA = [];
             let historyB = [];
 
+            // 우리 DB에 쌓여있는 경기 데이터 중 정산 완료된 모든 조별리그+토너먼트 경기 추출
             allDbMatches.forEach(match => {
                 if (match.status === 'finished' || match.status === 'paid') {
                     const hName = match.team_a;
@@ -176,10 +178,10 @@
                     const aScore = match.score_b;
                     
                     const matchHtml = `
-                        <div class="flex justify-between items-center text-xs bg-gray-50 py-2 px-3 rounded-lg border border-gray-200 font-mono shadow-sm animate-fade-in mb-1.5">
-                            <span class="text-gray-800 font-bold truncate flex-1 text-left">${hName}</span>
-                            <span class="font-black text-indigo-700 bg-white px-3 py-1 rounded-md border border-indigo-200 text-center mx-2">${hScore} : ${aScore}</span>
-                            <span class="text-gray-800 font-bold truncate flex-1 text-right">${aName}</span>
+                        <div class="flex justify-between items-center text-[10px] bg-white p-1.5 rounded border border-gray-100 font-mono mb-1 shadow-sm animate-fade-in">
+                            <span class="text-gray-700 truncate w-2/5 font-bold">${hName}</span>
+                            <span class="font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">${hScore} : ${aScore}</span>
+                            <span class="text-gray-700 truncate w-2/5 text-right font-bold">${aName}</span>
                         </div>`;
 
                     if (hName === korTeamA || aName === korTeamA) historyA.push(matchHtml);
@@ -187,21 +189,25 @@
                 }
             });
 
-            historyA.reverse(); historyB.reverse();
-            historyA = historyA.slice(0, 4); historyB = historyB.slice(0, 4);
+            // 가장 최근 경기(최신순)로 정렬하기 위해 배열 뒤집기
+            historyA.reverse();
+            historyB.reverse();
 
-            const htmlA = historyA.length > 0 ? historyA.join('') : '<p class="text-xs text-gray-400 text-center py-2">이전 경기 데이터 없음</p>';
-            const htmlB = historyB.length > 0 ? historyB.join('') : '<p class="text-xs text-gray-400 text-center py-2">이전 경기 데이터 없음</p>';
+            // 가시성을 위해 각 국가별 최근 4경기씩 커트
+            historyA = historyA.slice(0, 4);
+            historyB = historyB.slice(0, 4);
 
-            // 좌우 반반이 아닌 위아래 수직 정렬로 모바일에서 가독성 100% 확보
+            const htmlA = historyA.length > 0 ? historyA.join('') : '<p class="text-[10px] text-gray-400 text-center mt-2">이전 경기 데이터 없음</p>';
+            const htmlB = historyB.length > 0 ? historyB.join('') : '<p class="text-[10px] text-gray-400 text-center mt-2">이전 경기 데이터 없음</p>';
+
             el.innerHTML = `
-                <div class="flex flex-col gap-4">
-                    <div class="bg-white rounded-xl p-3 shadow border border-gray-100">
-                        <p class="text-sm font-black text-blue-700 mb-3 border-b border-blue-100 pb-2 text-center">📈 ${korTeamA} 최근전적</p>
+                <div class="flex gap-2">
+                    <div class="w-1/2 border-r border-gray-200 pr-2">
+                        <p class="text-[11px] font-black text-blue-700 mb-2 border-b border-blue-200 pb-1 text-center">${korTeamA} 최근전적</p>
                         <div class="flex flex-col">${htmlA}</div>
                     </div>
-                    <div class="bg-white rounded-xl p-3 shadow border border-gray-100">
-                        <p class="text-sm font-black text-red-700 mb-3 border-b border-red-100 pb-2 text-center">📈 ${korTeamB} 최근전적</p>
+                    <div class="w-1/2 pl-2">
+                        <p class="text-[11px] font-black text-red-700 mb-2 border-b border-red-200 pb-1 text-center">${korTeamB} 최근전적</p>
                         <div class="flex flex-col">${htmlB}</div>
                     </div>
                 </div>
@@ -351,12 +357,6 @@
                     const scoreB = parseInt(away.score) || 0;
                     const isFinished = event.status.type.state === 'post' || event.status.type.completed;
                     
-                    // ✅ ESPN API에 있는 기본 배당/핸디 정보 추출
-                    let oddsStr = "";
-                    if (comp.odds && comp.odds.length > 0 && comp.odds[0].details) {
-                        oddsStr = comp.odds[0].details;
-                    }
-
                     const existingMatch = dbMatches.find(m => m.team_a === teamA && m.team_b === teamB);
 
                     if (existingMatch) {
@@ -366,9 +366,7 @@
                         }
                     } else {
                         let initialStatus = isFinished ? 'finished' : 'open';
-                        await client.from('matches').insert({ 
-                            team_a: teamA, team_b: teamB, handicap: 0, odds_info: oddsStr, status: initialStatus, score_a: scoreA, score_b: scoreB, created_at: event.date 
-                        });
+                        await client.from('matches').insert({ team_a: teamA, team_b: teamB, handicap: 0, status: initialStatus, score_a: scoreA, score_b: scoreB, created_at: event.date });
                         newCount++;
                     }
                 }
@@ -480,6 +478,7 @@
                 const { data: matches } = await client.from('matches').select('*').order('created_at', { ascending: true });
                 const { data: bets } = await client.from('bets').select('*');
                 
+                // ✅ 로컬 DB 데이터 캐싱 완료 (전체 일정 매칭용)
                 allDbMatches = matches || []; 
                 
                 const statusOrder = { 'open': 1, 'closed': 2, 'finished': 3, 'paid': 4 };
@@ -569,9 +568,6 @@
                     else { const tName = b ? (b.pick === 'A' ? match.team_a : match.team_b) : '-'; return b ? `<span class="font-bold ${b.pick === 'A'?'text-blue-600':'text-red-600'}">${p}(${tName})</span>` : `<span class="text-gray-400">${p}(-)</span>`; }
                 }).join(' / ');
 
-                // ✅ 배당 정보 표시 로직 추가
-                const oddsHtml = match.odds_info ? `<span class="ml-2 pl-2 border-l border-blue-200 text-indigo-600">배당: ${match.odds_info}</span>` : '';
-
                 if (match.status === 'paid') {
                     const sA=Number(match.score_a), sB=Number(match.score_b), h=Number(match.handicap);
                     const adjA = sA + h;
@@ -610,7 +606,7 @@
                         </div>
                         <div class="text-center mb-3 mt-4">
                             <span class="text-2xl font-black text-gray-800">${match.team_a}</span> <span class="mx-2 text-gray-400">vs</span> <span class="text-2xl font-black text-gray-800">${match.team_b}</span>
-                            <p class="text-sm text-blue-600 font-bold mt-1 inline-block bg-blue-50 px-3 py-1 rounded-full border border-blue-100">핸디캡(A): ${match.handicap} ${oddsHtml}</p>
+                            <p class="text-sm text-blue-600 font-bold mt-1">핸디캡(A): ${match.handicap}</p>
                         </div>
                         <div class="bg-gray-800 text-white rounded-xl text-base p-4 text-center mb-3 shadow-inner">
                             <p class="font-bold">최종 스코어: <span class="text-yellow-300 text-xl">${sA} : ${sB}</span> (핸디 결과: ${winnerText})</p>
@@ -628,11 +624,11 @@
                     </span>
                     <div class="absolute top-2 right-4 flex gap-1 items-center">
                         <button onclick="editBetsAdmin(${match.id})" class="text-[10px] bg-purple-100 text-purple-800 font-bold border border-purple-300 px-2 py-1.5 rounded hover:bg-purple-200">✏️강제 픽수정</button>
-                        <button onclick="promptEditMatch(${match.id})" class="text-[10px] bg-gray-100 text-gray-600 border px-2 py-1.5 rounded">경기수정</button>
+                        <button onclick="editMatch(${match.id}, '${match.team_a}', '${match.team_b}', ${match.handicap})" class="text-[10px] bg-gray-100 text-gray-600 border px-2 py-1.5 rounded">경기수정</button>
                     </div>
                     <div class="text-center mb-5 mt-3">
                         <span class="text-2xl font-black text-gray-800">${match.team_a}</span> <span class="mx-2 text-gray-400 font-bold">vs</span> <span class="text-2xl font-black text-gray-800">${match.team_b}</span>
-                        <div class="mt-2 text-sm text-blue-600 font-bold bg-blue-50 inline-block px-3 py-1 rounded-full border border-blue-100">핸디캡(A): ${match.handicap} ${oddsHtml}</div>
+                        <p class="text-sm text-blue-600 font-bold mt-2 bg-blue-50 inline-block px-3 py-1 rounded-full border border-blue-100">핸디캡(A): ${match.handicap}</p>
                     </div>
                     <div class="flex gap-3 mb-4">
                         <button onclick="placeBet(${match.id}, 'A', '${match.team_a}')" class="${myBet?.pick === 'A'?'bg-blue-600 text-white shadow-inner border-2 border-blue-800':'bg-gray-100 text-gray-700 border-2 border-gray-300 hover:bg-blue-50'} w-1/2 py-4 rounded-xl font-black transition text-lg">${match.team_a} 승</button>
@@ -744,12 +740,9 @@
         }
 
         async function createMatch() {
-            const tA = document.getElementById('new-teamA').value;
-            const tB = document.getElementById('new-teamB').value;
-            const h = parseFloat(document.getElementById('new-handi').value);
-            const o = document.getElementById('new-odds').value; // ✅ 수동 배당 입력
+            const tA = document.getElementById('new-teamA').value, tB = document.getElementById('new-teamB').value, h = parseFloat(document.getElementById('new-handi').value);
             if(!tA || !tB || isNaN(h)) return alert("국가명과 핸디캡을 정확히 입력하세요.");
-            await client.from('matches').insert({ team_a: tA, team_b: tB, handicap: h, odds_info: o, status: 'open', created_at: new Date() });
+            await client.from('matches').insert({ team_a: tA, team_b: tB, handicap: h, status: 'open', created_at: new Date() });
             logAction('수동등록', `${tA} vs ${tB} (핸디:${h}) 등록`);
             loadData();
         }
@@ -761,24 +754,10 @@
             loadData();
         }
 
-        // ✅ 방장이 직접 배당도 수정할 수 있는 함수로 교체
-        function promptEditMatch(id) {
+        async function editMatch(id, a, b, h) {
             if(!checkAuth()) return;
-            const match = allDbMatches.find(m => m.id === id);
-            if (!match) return;
-            
-            const nA = prompt("팀A 수정:", match.team_a);
-            if(nA === null) return;
-            const nB = prompt("팀B 수정:", match.team_b);
-            const nH = prompt("핸디캡 수정:", match.handicap);
-            const nO = prompt("배당률 수정 (예: 1.50 / 3.20):", match.odds_info || '');
-            
-            if(nA && nB && nH) {
-                client.from('matches').update({ team_a: nA, team_b: nB, handicap: parseFloat(nH), odds_info: nO }).eq('id', id).then(() => {
-                    logAction('경기수정', `경기ID:${id} 수정됨`);
-                    loadData();
-                });
-            }
+            const nA = prompt("팀A 수정:", a), nB = prompt("팀B 수정:", b), nH = prompt("핸디:", h);
+            if(nA && nB) { await client.from('matches').update({ team_a: nA, team_b: nB, handicap: parseFloat(nH) }).eq('id', id); logAction('경기수정', `경기ID:${id} 수정됨`); loadData(); }
         }
 
         async function editBetsAdmin(matchId) {
