@@ -6,6 +6,8 @@
     <title>아카파 여행자금 모금처</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- ✅ 그래프(Chart.js)를 그리기 위한 라이브러리 추가 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-gray-100 p-4 md:p-8 font-sans relative">
 
@@ -46,7 +48,17 @@
                 <li class="text-gray-400 text-center">결과가 정산된 경기가 없습니다.</li>
             </ul>
 
-            <div class="mt-4 pt-3 border-t border-gray-600">
+            <!-- ✅ 일자별 벌금 추세 그래프 토글 버튼 & 캔버스 -->
+            <div class="border-t border-gray-600 pt-3 mb-4">
+                <button onclick="document.getElementById('chart-container').classList.toggle('hidden')" class="w-full bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold py-2 rounded-lg transition shadow-sm flex justify-center items-center gap-2 border border-gray-500">
+                    <span>📈 일자별 벌금 누적 추세 보기</span>
+                </button>
+                <div id="chart-container" class="hidden mt-3 h-56 bg-white rounded-lg p-2 shadow-inner">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+
+            <div class="pt-3 border-t border-gray-600">
                 <h4 class="text-sm font-bold text-red-400 mb-2 flex items-center gap-1">🚨 오늘 송금할 미납액 (수금 전)</h4>
                 <ul id="pending-payments" class="space-y-2 text-sm text-gray-300">
                     <li class="text-center text-gray-500 py-1 text-xs">오늘 정산할 요금이 없습니다 👏</li>
@@ -71,6 +83,7 @@
         <button onclick="handleAdminAction('show_menu')" class="bg-gray-700 text-white px-6 py-3 rounded-full font-bold hover:bg-black transition shadow-md">👑 관리자 모드 접속</button>
     </div>
 
+    <!-- 방장 전용 메뉴 생략 (이전과 동일) -->
     <div id="admin-menu" class="max-w-3xl mx-auto bg-red-50 rounded-xl shadow-lg overflow-hidden p-6 border-2 border-red-200 hidden">
         <h2 class="text-xl font-extrabold text-red-600 mb-4 flex justify-between items-center">
             <span>👑 방장 전용 관리 메뉴</span>
@@ -127,6 +140,7 @@
         let currentIP = 'IP확인불가'; 
         let isAdminLoggedIn = false; 
         let isPublicSyncing = false;
+        let trendChart = null; // 차트 객체 저장용 변수
 
         const teamDictionary = {
             "Mexico": "멕시코", "Czech Republic": "체코", "Czechia": "체코", "South Africa": "남아프리카공화국", "South Korea": "대한민국", "Korea Republic": "대한민국",
@@ -144,69 +158,70 @@
             "Ghana": "가나"
         };
 
-        // ✅ ESPN API에서 특정 두 팀의 최근 경기 내역을 추적해서 띄워주는 함수
-        async function toggleMatchHistory(matchId, engTeamA, engTeamB) {
+        // ✅ 각 팀별 독립적인 최근 전적 가져오기 기능
+        async function toggleMatchHistory(matchId, korTeamA, korTeamB) {
             const el = document.getElementById(`history-box-${matchId}`);
             if (!el.classList.contains('hidden')) {
                 el.classList.add('hidden');
                 return;
             }
 
-            el.innerHTML = `<p class="text-xs text-gray-500 text-center py-2 animate-pulse">📋 최근 전적 데이터를 불러오는 중...</p>`;
+            el.innerHTML = `<p class="text-xs text-gray-500 text-center py-4 animate-pulse">📊 전력을 분석하고 있습니다...</p>`;
             el.classList.remove('hidden');
 
             try {
-                // 한글명을 다시 역조회하기 위해 딕셔너리 키값 활용
-                const getEngKey = (korName) => Object.keys(teamDictionary).find(key => teamDictionary[key] === korName) || korName;
-                const searchA = getEngKey(engTeamA).toLowerCase();
-                const searchB = getEngKey(engTeamB).toLowerCase();
-
-                // 과거 일정 싹 긁어오기 (현재 월드컵 스코보드 데이터 기반 크롤링 대용 호출)
                 const response = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=100`);
                 const data = await response.json();
                 
-                let historyHtml = `<div class="space-y-1.5 max-h-36 overflow-y-auto">`;
-                let recordsFound = false;
+                let historyA = [];
+                let historyB = [];
 
                 if (data.events) {
                     data.events.forEach(event => {
-                        const comp = event.competitions[0];
-                        const home = comp.competitors.find(c => c.homeAway === 'home');
-                        const away = comp.competitors.find(c => c.homeAway === 'away');
-                        
-                        const homeNameEng = home.team.name.toLowerCase();
-                        const awayNameEng = away.team.name.toLowerCase();
-
-                        // 두 국가 중 하나라도 겹치는 경기가 완료(post)된 상태라면 이력을 추출
                         if (event.status.type.state === 'post' || event.status.type.completed) {
-                            if (homeNameEng === searchA || homeNameEng === searchB || awayNameEng === searchA || awayNameEng === searchB) {
-                                const hName = teamDictionary[home.team.name] || home.team.name;
-                                const aName = teamDictionary[away.team.name] || away.team.name;
-                                const hScore = home.score;
-                                const aScore = away.score;
-                                
-                                historyHtml += `
-                                    <div class="flex justify-between items-center text-xs bg-white p-1.5 rounded border border-gray-100 font-mono">
-                                        <span class="text-gray-600">${hName}</span>
-                                        <span class="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">${hScore} : ${aScore}</span>
-                                        <span class="text-gray-600 text-right">${aName}</span>
-                                    </div>`;
-                                recordsFound = true;
-                            }
+                            const comp = event.competitions[0];
+                            const home = comp.competitors.find(c => c.homeAway === 'home');
+                            const away = comp.competitors.find(c => c.homeAway === 'away');
+                            
+                            const hNameKor = teamDictionary[home.team.name] || home.team.name;
+                            const aNameKor = teamDictionary[away.team.name] || away.team.name;
+                            const hScore = home.score;
+                            const aScore = away.score;
+                            
+                            const matchHtml = `
+                                <div class="flex justify-between items-center text-[10px] bg-white p-1.5 rounded border border-gray-100 font-mono mb-1 shadow-sm">
+                                    <span class="text-gray-700 truncate w-2/5 font-bold">${hNameKor}</span>
+                                    <span class="font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">${hScore} : ${aScore}</span>
+                                    <span class="text-gray-700 truncate w-2/5 text-right font-bold">${aNameKor}</span>
+                                </div>`;
+
+                            // 한국어 이름 기준으로 양 팀의 경기를 각각 분리해서 저장
+                            if (hNameKor === korTeamA || aNameKor === korTeamA) historyA.push(matchHtml);
+                            if (hNameKor === korTeamB || aNameKor === korTeamB) historyB.push(matchHtml);
                         }
                     });
                 }
 
-                historyHtml += `</div>`;
-                
-                if (!recordsFound) {
-                    el.innerHTML = `<p class="text-xs text-gray-400 text-center py-2">이번 대회에 완료된 전적 기록이 없습니다.</p>`;
-                } else {
-                    el.innerHTML = `
-                        <p class="text-[11px] font-bold text-indigo-700 mb-2 border-b pb-1">📊 각 국가의 이번 대회 최근 스코어 기록</p>
-                        ${historyHtml}
-                    `;
-                }
+                // 최근 경기 4개까지만 자르기
+                historyA = historyA.slice(-4);
+                historyB = historyB.slice(-4);
+
+                const htmlA = historyA.length > 0 ? historyA.join('') : '<p class="text-[10px] text-gray-400 text-center mt-2">최근 기록이 없습니다.</p>';
+                const htmlB = historyB.length > 0 ? historyB.join('') : '<p class="text-[10px] text-gray-400 text-center mt-2">최근 기록이 없습니다.</p>';
+
+                // 화면을 반으로 나누어 양 팀의 전적을 한눈에 비교
+                el.innerHTML = `
+                    <div class="flex gap-2">
+                        <div class="w-1/2 border-r border-gray-200 pr-2">
+                            <p class="text-[11px] font-black text-blue-700 mb-2 border-b border-blue-200 pb-1 text-center">${korTeamA} 최근전적</p>
+                            <div class="flex flex-col">${htmlA}</div>
+                        </div>
+                        <div class="w-1/2 pl-2">
+                            <p class="text-[11px] font-black text-red-700 mb-2 border-b border-red-200 pb-1 text-center">${korTeamB} 최근전적</p>
+                            <div class="flex flex-col">${htmlB}</div>
+                        </div>
+                    </div>
+                `;
             } catch (e) {
                 console.error(e);
                 el.innerHTML = `<p class="text-xs text-red-500 text-center py-2">데이터 로드 실패 (API 응답 지연)</p>`;
@@ -237,11 +252,9 @@
                 logContainer.innerHTML = logs.map(l => {
                     const dbDate = new Date(l.created_at);
                     dbDate.setHours(dbDate.getHours() - 9); 
-                    
                     const kstDate = dbDate.toLocaleDateString('ko-KR', {month: 'short', day: 'numeric'});
                     const kstTime = dbDate.toLocaleTimeString('ko-KR', {hour: '2-digit', minute:'2-digit'});
                     const ipDisplay = l.ip_address ? `(${l.ip_address})` : '(IP없음)';
-                    
                     return `<div class="border-b border-gray-700 pb-1 mb-1"><span class="text-gray-500">[${kstDate} ${kstTime}]</span> <span class="text-blue-300 font-bold">${l.user_name} <span class="text-[10px] text-gray-500">${ipDisplay}</span></span>: <span class="text-yellow-300">${l.action_type}</span> <span class="text-gray-400">- ${l.details}</span></div>`;
                 }).join('');
             } catch(e) { console.error(e); }
@@ -341,8 +354,7 @@
                 const date2 = dateVal.replace(/-/g, '');
 
                 const [res1, res2] = await Promise.all([
-                    fetch// 누군가 접근 가능한 공개 새로고침 버튼 추가
-                    (`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${date1}`),
+                    fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${date1}`),
                     fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${date2}`)
                 ]);
                 
@@ -452,6 +464,97 @@
             loadData();
         }
 
+        // ✅ 그래프 그리는 함수 추가
+        function renderTrendChart(matches, bets) {
+            const allSettled = matches.filter(m => m.status === 'finished' || m.status === 'paid');
+            // 날짜 순서대로 정렬 (과거 -> 현재)
+            allSettled.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            const dailyData = {};
+
+            // 일자별로 누가 벌금을 얼마나 맞았는지 데이터 모으기
+            allSettled.forEach(match => {
+                const matchBets = bets.filter(b => b.match_id === match.id);
+                const adjA = Number(match.score_a) + Number(match.handicap);
+                let winner = (adjA > Number(match.score_b)) ? 'A' : (adjA < Number(match.score_b)) ? 'B' : 'D';
+                
+                const d = new Date(match.created_at);
+                const kstDateStr = d.toLocaleDateString('ko-KR', {month: 'short', day: 'numeric'});
+
+                if (!dailyData[kstDateStr]) {
+                    dailyData[kstDateStr] = { '박형철': 0, '와대': 0, '손호민': 0, '최석훈': 0 };
+                }
+
+                if(winner !== 'D') {
+                    players.forEach(p => {
+                        const bet = matchBets.find(b => b.player_name === p);
+                        if (!bet || bet.pick !== winner) {
+                            dailyData[kstDateStr][p] += 1500;
+                        }
+                    });
+                }
+            });
+
+            const labels = Object.keys(dailyData);
+            let finalData = { '박형철': [], '와대': [], '손호민': [], '최석훈': [] };
+            let currentSums = { '박형철': 0, '와대': 0, '손호민': 0, '최석훈': 0 };
+
+            // 누적 합산 계산
+            labels.forEach(date => {
+                players.forEach(p => {
+                    currentSums[p] += dailyData[date][p];
+                    finalData[p].push(currentSums[p]);
+                });
+            });
+
+            // 데이터가 아예 없을 때의 방어 로직
+            if(labels.length === 0) {
+                labels.push('진행된 경기 없음');
+                players.forEach(p => finalData[p].push(0));
+            }
+
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            
+            if (trendChart) {
+                trendChart.destroy();
+            }
+
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: '박형철', data: finalData['박형철'], borderColor: '#3b82f6', backgroundColor: '#3b82f6', tension: 0.3, borderWidth: 3 },
+                        { label: '와대', data: finalData['와대'], borderColor: '#ef4444', backgroundColor: '#ef4444', tension: 0.3, borderWidth: 3 },
+                        { label: '손호민', data: finalData['손호민'], borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.3, borderWidth: 3 },
+                        { label: '최석훈', data: finalData['최석훈'], borderColor: '#f59e0b', backgroundColor: '#f59e0b', tension: 0.3, borderWidth: 3 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11, weight: 'bold' } } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toLocaleString() + '원';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { font: { size: 10 }, callback: function(value) { return value.toLocaleString() + '원'; } } },
+                        x: { ticks: { font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+
         async function loadData() {
             try {
                 const { data: matches } = await client.from('matches').select('*').order('created_at', { ascending: true });
@@ -460,6 +563,7 @@
                 matches.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
 
                 calculateLeaderboard(matches || [], bets || []);
+                renderTrendChart(matches || [], bets || []); // ✅ 차트 그리기 추가
                 renderMatches(matches || [], bets || []);
                 renderAdminList(matches || []);
             } catch (err) { console.error(err); }
@@ -500,7 +604,10 @@
                 
                 logAction('개별수금', `${playerName} 미납액 수금 완료`);
                 loadData(); 
-            } catch(e) { console.error(e); alert("수금 처리 중 오류가 발생했습니다."); }
+            } catch(e) {
+                console.error(e);
+                alert("수금 처리 중 오류가 발생했습니다.");
+            }
         }
 
         function renderAdminList(matches) {
@@ -599,7 +706,7 @@
                     <div class="border-2 border-red-300 bg-red-50 rounded-2xl p-6 relative shadow-md mb-6">
                         <span class="absolute -top-3 left-4 bg-red-600 text-white px-3 py-1 rounded text-xs font-bold shadow animate-pulse">정산완료 (수금 대기중)</span>
                         <div class="absolute top-2 right-4 flex gap-1 items-center">
-                            <button onclick="handleAdminAction('paid', ${match.id})" class="text-xs font-black bg-green-500 text-white px-3 py-1.5 rounded shadow hover:bg-green-600">💰전체 수금처리</button>
+                            <button onclick="handleAdminAction('paid', ${match.id})" class="text-xs font-black bg-green-500 text-white px-3 py-1.5 rounded shadow hover:bg-green-600" title="이 경기의 모든 사람이 돈을 냈을 때 누르세요">💰전체 수금처리</button>
                             <button onclick="editBetsAdmin(${match.id})" class="text-xs bg-purple-200 text-purple-800 px-2 py-1.5 rounded font-bold">✏️픽수정</button>
                             <button onclick="deleteMatch(${match.id})" class="text-xs bg-gray-300 text-gray-700 px-2 py-1.5 rounded">🗑️</button>
                         </div>
@@ -616,7 +723,6 @@
                     return;
                 }
 
-                // 베팅 대기 경기 카드
                 let cardHTML = `
                 <div class="border-2 border-blue-400 bg-white rounded-2xl p-6 relative shadow-lg mb-6">
                     <span class="absolute -top-3 left-4 ${match.status === 'closed' ? 'bg-yellow-500' : 'bg-blue-600'} text-white px-3 py-1 rounded text-xs font-bold shadow">
@@ -635,6 +741,7 @@
                         <button onclick="placeBet(${match.id}, 'B', '${match.team_b}')" class="${myBet?.pick === 'B'?'bg-red-600 text-white shadow-inner border-2 border-red-800':'bg-gray-100 text-gray-700 border-2 border-gray-300 hover:bg-red-50'} w-1/2 py-4 rounded-xl font-black transition text-lg">${match.team_b} 승</button>
                     </div>
                     
+                    <!-- ✅ AI 분석을 지우고 각 국가별 독립적인 최근 경기 데이터로 교체 -->
                     <div class="mt-2 mb-3">
                         <button onclick="toggleMatchHistory(${match.id}, '${match.team_a}', '${match.team_b}')" class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-2.5 rounded-lg text-sm shadow hover:opacity-95 transition">📊 양 팀의 최근 경기 기록 보기</button>
                         <div id="history-box-${match.id}" class="hidden mt-2 p-3 bg-gray-50 border border-gray-200 rounded-xl shadow-inner text-sm text-gray-800"></div>
@@ -819,7 +926,10 @@
                 logAction('강제픽수정', `경기ID:${matchId} 방장 픽 수정 (${picks.join(', ')})`);
                 alert("베팅 기록이 완벽하게 수정되었습니다!");
                 loadData();
-            } catch(e) { console.error(e); alert("수정 중 오류가 발생했습니다."); }
+            } catch(e) {
+                console.error(e);
+                alert("수정 중 오류가 발생했습니다.");
+            }
         }
         
         async function deleteMatch(id) {
